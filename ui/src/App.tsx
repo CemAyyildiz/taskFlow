@@ -2,7 +2,6 @@ import { useRef } from "react";
 import { Hero } from "./components/Hero";
 import { HowItWorks } from "./components/HowItWorks";
 import { LiveDemo } from "./components/LiveDemo";
-import { Architecture } from "./components/Architecture";
 import { TechStack, Footer } from "./components/TechStackFooter";
 
 function App() {
@@ -61,7 +60,6 @@ function App() {
         <LiveDemo />
       </div>
 
-      <Architecture />
       <TechStack />
       <Footer />
     </div>

@@ -1,139 +1,101 @@
-// ─── TaskFlow Agent API Client ──────────────────────────────────────
-// Connects to the real TaskFlow agent server.
+import type { Task } from "./types";
 
-const AGENT_URL = import.meta.env.VITE_AGENT_URL ?? "http://localhost:3001";
+const API = "http://localhost:3001";
 
-// ─── Response Types ─────────────────────────────────────────────────
+// Contract address (same as deployed)
+export const CONTRACT_ADDRESS = "0xB0470F3Aa9ff5e2ce0810444d9d1A4a21B18661C";
 
-export interface HealthResponse {
-  status: string;
-  agent: string;
-  version: string;
-  wallet: string;
-  uptime: number;
-  tasks: number;
-}
-
-export interface TaskResponse {
-  id: string;
-  title: string;
-  reward: string;
-  status: string;
-  requester: string;
-  worker: string | null;
-  paymentTx: string | null;
-  createdAt: number;
-  updatedAt: number;
-}
-
-// ─── API Calls ──────────────────────────────────────────────────────
-
-export async function getHealth(): Promise<HealthResponse> {
-  const res = await fetch(`${AGENT_URL}/health`);
-  if (!res.ok) throw new Error("Agent unreachable");
+// ─── Health ─────────────────────────────────────────────────────────
+export async function getHealth(): Promise<any> {
+  const res = await fetch(`${API}/health`);
+  if (!res.ok) throw new Error("Platform offline");
   return res.json();
 }
 
-export async function getTasks(status?: string): Promise<TaskResponse[]> {
-  const url = status ? `${AGENT_URL}/tasks?status=${status}` : `${AGENT_URL}/tasks`;
+// ─── Tasks ──────────────────────────────────────────────────────────
+export async function getTasks(status?: string): Promise<Task[]> {
+  const url = status ? `${API}/tasks?status=${status}` : `${API}/tasks`;
   const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to fetch tasks");
   return res.json();
 }
 
-export async function createTask(
-  title: string,
-  reward: string,
-  requester: string
-): Promise<TaskResponse> {
-  const res = await fetch(`${AGENT_URL}/tasks`, {
+export async function getTask(id: string): Promise<Task> {
+  const res = await fetch(`${API}/tasks/${id}`);
+  if (!res.ok) throw new Error("Task not found");
+  return res.json();
+}
+
+// ─── Create task (on-chain via platform) ───────────────────────────
+export async function createTask(opts: {
+  title: string;
+  description: string;
+  reward: string;
+  requester: string;
+}): Promise<Task> {
+  const res = await fetch(`${API}/tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, reward, requester }),
+    body: JSON.stringify(opts),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Failed to create task" }));
-    throw new Error(err.error);
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error || "Failed to create task");
   }
   return res.json();
 }
 
+// ─── Worker: Accept task (on-chain via platform) ───────────────────
 export async function acceptTask(
-  id: string,
+  taskId: string,
   worker: string
-): Promise<TaskResponse> {
-  const res = await fetch(`${AGENT_URL}/tasks/${id}/accept`, {
+): Promise<Task> {
+  const res = await fetch(`${API}/tasks/${taskId}/accept`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ worker }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Failed to accept task" }));
-    throw new Error(err.error);
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error || "Failed to accept task");
   }
   return res.json();
 }
 
-export async function completeTask(
-  id: string,
-  worker: string
-): Promise<TaskResponse> {
-  const res = await fetch(`${AGENT_URL}/tasks/${id}/complete`, {
+// ─── Worker: Submit result (on-chain via platform) ─────────────────
+export async function submitTask(
+  taskId: string,
+  worker: string,
+  result: string
+): Promise<Task> {
+  const res = await fetch(`${API}/tasks/${taskId}/submit`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ worker }),
+    body: JSON.stringify({ worker, result }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Failed to complete task" }));
-    throw new Error(err.error);
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error || "Failed to submit result");
   }
   return res.json();
 }
 
-export async function confirmTask(
-  id: string,
-  requester: string
-): Promise<TaskResponse> {
-  const res = await fetch(`${AGENT_URL}/tasks/${id}/confirm`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ requester }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Failed to confirm task" }));
-    throw new Error(err.error);
-  }
-  return res.json();
-}
-
-// ─── SSE Stream ─────────────────────────────────────────────────────
-
+// ─── SSE ────────────────────────────────────────────────────────────
 export function connectSSE(
-  onEvent: (event: string, data: unknown) => void
-): EventSource {
-  const es = new EventSource(`${AGENT_URL}/events`);
+  onEvent: (event: string, data: any) => void
+): () => void {
+  const es = new EventSource(`${API}/events`);
 
-  const events = [
-    "connected",
-    "task:created",
-    "task:accepted",
-    "task:completed",
-    "task:confirmed",
-    "payment:sent",
-    "payment:failed",
-    "monitor:stale_task",
-    "monitor:awaiting_confirm",
-  ];
+  es.addEventListener("connected", (e) =>
+    onEvent("connected", JSON.parse(e.data))
+  );
+  es.addEventListener("task:created", (e) =>
+    onEvent("task:created", JSON.parse(e.data))
+  );
+  es.addEventListener("task:updated", (e) =>
+    onEvent("task:updated", JSON.parse(e.data))
+  );
+  es.onerror = () => onEvent("error", { message: "SSE connection lost" });
 
-  for (const evt of events) {
-    es.addEventListener(evt, (e) => {
-      try {
-        onEvent(evt, JSON.parse((e as MessageEvent).data));
-      } catch {
-        onEvent(evt, (e as MessageEvent).data);
-      }
-    });
-  }
-
-  return es;
+  return () => es.close();
 }

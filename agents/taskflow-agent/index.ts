@@ -1,243 +1,552 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import { resolve } from "node:path";
+
+// Load .env from project root
+dotenv.config({ path: resolve(import.meta.dirname ?? ".", "../../.env") });
+
 import express from "express";
 import cors from "cors";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Hex } from "viem";
-import { taskStore } from "../../shared/taskStore.js";
-import { TaskStatus } from "../../shared/types.js";
-import type { Task } from "../../shared/types.js";
-import { sendMON, getBalance, addressFromKey, getPublicClient } from "../../shared/monad.js";
+import {
+  formatEther,
+  parseEther,
+  createPublicClient,
+  createWalletClient,
+  http,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { monad } from "viem/chains";
+
+// ─── Crash Guards ───────────────────────────────────────────────────
+process.on("uncaughtException", (err) => {
+  console.error("⚠️  Uncaught exception (kept alive):", err.message);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("⚠️  Unhandled rejection (kept alive):", reason);
+});
 
 // ─── Config ─────────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT ?? 3001);
-const AGENT_KEY = process.env.PRIVATE_KEY as Hex | undefined;
-const AGENT_ADDR = AGENT_KEY ? addressFromKey(AGENT_KEY) : null;
-const MONITOR_INTERVAL = 10_000; // 10s
+const PRIVATE_KEY = process.env.PRIVATE_KEY as Hex;
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS as Hex;
 
-// ─── SSE Client Pool ────────────────────────────────────────────────
-const sseClients = new Set<express.Response>();
+if (!PRIVATE_KEY) {
+  console.error("❌ PRIVATE_KEY not set in .env");
+  process.exit(1);
+}
 
-function broadcast(event: string, data: unknown): void {
-  const ts = new Date().toISOString().slice(11, 19);
-  console.log(`[${ts}] [TaskFlow] ⚡ ${event}`);
-  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const client of sseClients) {
-    client.write(payload);
+if (!CONTRACT_ADDRESS) {
+  console.error("❌ CONTRACT_ADDRESS not set in .env");
+  process.exit(1);
+}
+
+// ─── Contract ABI ───────────────────────────────────────────────────
+const ABI = [
+  {
+    type: "function",
+    name: "createTask",
+    inputs: [{ name: "taskId", type: "string" }],
+    outputs: [],
+    stateMutability: "payable",
+  },
+  {
+    type: "function",
+    name: "acceptTask",
+    inputs: [{ name: "taskId", type: "string" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "submitTask",
+    inputs: [
+      { name: "taskId", type: "string" },
+      { name: "result", type: "string" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "releasePayout",
+    inputs: [{ name: "taskId", type: "string" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "getTask",
+    inputs: [{ name: "taskId", type: "string" }],
+    outputs: [
+      { name: "requester", type: "address" },
+      { name: "worker", type: "address" },
+      { name: "reward", type: "uint256" },
+      { name: "status", type: "uint8" },
+      { name: "result", type: "string" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getBalance",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+] as const;
+
+const ContractStatus = ["OPEN", "ACCEPTED", "SUBMITTED", "DONE", "CANCELLED"] as const;
+
+// ─── Viem Clients ───────────────────────────────────────────────────
+const account = privateKeyToAccount(PRIVATE_KEY);
+const PLATFORM_ADDRESS = account.address;
+
+const publicClient = createPublicClient({
+  chain: monad,
+  transport: http(),
+});
+
+const walletClient = createWalletClient({
+  account,
+  chain: monad,
+  transport: http(),
+});
+
+// ─── In-Memory Task Cache ───────────────────────────────────────────
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+  reward: string;
+  requester: string;
+  worker: string | null;
+  status: string;
+  result: string | null;
+  escrowTx: string | null;
+  acceptTx: string | null;
+  submitTx: string | null;
+  payoutTx: string | null;
+  createdAt: string;
+}
+
+const tasks = new Map<string, Task>();
+
+// ─── SSE ────────────────────────────────────────────────────────────
+type SSEClient = { id: string; res: express.Response };
+const sseClients: SSEClient[] = [];
+
+function broadcast(event: string, data: unknown) {
+  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  sseClients.forEach((c) => {
+    try { c.res.write(msg); } catch { /* stale */ }
+  });
+}
+
+// ─── Contract Helpers ───────────────────────────────────────────────
+async function getTaskFromContract(taskId: string): Promise<Task | null> {
+  try {
+    const result = await publicClient.readContract({
+      address: CONTRACT_ADDRESS,
+      abi: ABI,
+      functionName: "getTask",
+      args: [taskId],
+    });
+    const [requester, worker, reward, status, taskResult] = result;
+    if (requester === "0x0000000000000000000000000000000000000000") return null;
+
+    const cached = tasks.get(taskId);
+    return {
+      id: taskId,
+      title: cached?.title ?? taskId,
+      description: cached?.description ?? "",
+      reward: formatEther(reward),
+      requester,
+      worker: worker === "0x0000000000000000000000000000000000000000" ? null : worker,
+      status: ContractStatus[status] ?? "UNKNOWN",
+      result: taskResult || null,
+      escrowTx: cached?.escrowTx ?? null,
+      acceptTx: cached?.acceptTx ?? null,
+      submitTx: cached?.submitTx ?? null,
+      payoutTx: cached?.payoutTx ?? null,
+      createdAt: cached?.createdAt ?? new Date().toISOString(),
+    };
+  } catch {
+    return null;
   }
 }
 
-function log(msg: string): void {
-  const ts = new Date().toISOString().slice(11, 19);
-  console.log(`[${ts}] [TaskFlow] ${msg}`);
+let cachedContractBalance = "0";
+async function refreshContractBalance() {
+  try {
+    const balance = await publicClient.readContract({
+      address: CONTRACT_ADDRESS,
+      abi: ABI,
+      functionName: "getBalance",
+    });
+    cachedContractBalance = formatEther(balance);
+  } catch { /* keep stale */ }
 }
+refreshContractBalance();
+setInterval(refreshContractBalance, 10_000);
 
 // ─── Express App ────────────────────────────────────────────────────
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ── Health ──────────────────────────────────────────────────────────
-app.get("/health", (_req, res) => {
+// ══════════════════════════════════════════════════════════════════════
+// HEALTH & INFO
+// ══════════════════════════════════════════════════════════════════════
+
+app.get("/health", async (_req, res) => {
+  await refreshContractBalance();
+  const taskList = Array.from(tasks.values());
   res.json({
     status: "ok",
-    agent: "taskflow",
-    version: "0.1.0",
-    wallet: AGENT_ADDR ?? "not configured",
-    uptime: process.uptime(),
-    tasks: taskStore.list().length,
+    platform: PLATFORM_ADDRESS,
+    contract: CONTRACT_ADDRESS,
+    escrowBalance: cachedContractBalance,
+    chain: "monad-mainnet",
+    chainId: 143,
+    explorer: `https://monadscan.com/address/${CONTRACT_ADDRESS}`,
+    tasks: {
+      total: taskList.length,
+      open: taskList.filter((t) => t.status === "OPEN").length,
+      accepted: taskList.filter((t) => t.status === "ACCEPTED").length,
+      submitted: taskList.filter((t) => t.status === "SUBMITTED").length,
+      done: taskList.filter((t) => t.status === "DONE").length,
+    },
   });
 });
 
-// ── Serve skill.md ──────────────────────────────────────────────────
 app.get("/skill.md", (_req, res) => {
   try {
-    const __dirname = resolve(fileURLToPath(import.meta.url), "..");
-    const skillPath = resolve(__dirname, "../../ui/public/skill.md");
-    const content = readFileSync(skillPath, "utf-8");
-    res.type("text/markdown").send(content);
+    const skillPath = resolve(import.meta.dirname ?? ".", "../../ui/public/skill.md");
+    res.type("text/markdown").send(readFileSync(skillPath, "utf-8"));
   } catch {
-    res.status(404).send("skill.md not found");
+    res.status(404).send("# skill.md not found");
   }
 });
 
-// ── SSE Event Stream ────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════
+// ON-CHAIN TASK ENDPOINTS — Real blockchain transactions
+// ══════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /tasks — Create task ON-CHAIN
+ * Platform sends MON to contract as escrow
+ * 
+ * Body: { title, description?, reward, requester }
+ * Returns: Task with escrowTx (on-chain tx hash)
+ */
+app.post("/tasks", async (req, res) => {
+  try {
+    const { title, description, reward, requester } = req.body;
+
+    if (!title || !reward || !requester) {
+      res.status(400).json({ error: "Missing: title, reward, requester" });
+      return;
+    }
+
+    const rewardNum = parseFloat(reward);
+    if (isNaN(rewardNum) || rewardNum <= 0) {
+      res.status(400).json({ error: "Invalid reward amount" });
+      return;
+    }
+
+    // Generate unique task ID
+    const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+    console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`📥 CREATE TASK (on-chain)`);
+    console.log(`  Title: "${title}"`);
+    console.log(`  Reward: ${reward} MON`);
+    console.log(`  Requester: ${requester}`);
+    console.log(`  Task ID: ${taskId}`);
+
+    // Send tx to contract — pays escrow
+    console.log(`  ⏳ Sending tx to contract...`);
+    const hash = await walletClient.writeContract({
+      address: CONTRACT_ADDRESS,
+      abi: ABI,
+      functionName: "createTask",
+      args: [taskId],
+      value: parseEther(reward),
+    });
+    console.log(`  📤 Tx: ${hash}`);
+
+    // Wait for confirmation
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    console.log(`  ✅ Confirmed in block ${receipt.blockNumber}`);
+    console.log(`  🔗 https://monadscan.com/tx/${hash}`);
+
+    // Store in cache
+    const task: Task = {
+      id: taskId,
+      title,
+      description: description ?? "",
+      reward,
+      requester,
+      worker: null,
+      status: "OPEN",
+      result: null,
+      escrowTx: hash,
+      acceptTx: null,
+      submitTx: null,
+      payoutTx: null,
+      createdAt: new Date().toISOString(),
+    };
+    tasks.set(taskId, task);
+    broadcast("task:created", task);
+    refreshContractBalance();
+
+    res.status(201).json(task);
+  } catch (err: any) {
+    console.error(`  ❌ Error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /tasks/:id/accept — Accept task ON-CHAIN
+ * 
+ * Body: { worker }
+ * Returns: Task with acceptTx (on-chain tx hash)
+ */
+app.post("/tasks/:id/accept", async (req, res) => {
+  try {
+    const { worker } = req.body;
+    const taskId = req.params.id;
+
+    if (!worker) {
+      res.status(400).json({ error: "Missing: worker" });
+      return;
+    }
+
+    let task = tasks.get(taskId);
+    if (!task) {
+      task = await getTaskFromContract(taskId);
+      if (!task) {
+        res.status(404).json({ error: "Task not found" });
+        return;
+      }
+    }
+
+    if (task.status !== "OPEN") {
+      res.status(400).json({ error: `Task is ${task.status}, not OPEN` });
+      return;
+    }
+
+    console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`🤝 ACCEPT TASK (on-chain)`);
+    console.log(`  Task ID: ${taskId}`);
+    console.log(`  Worker: ${worker}`);
+
+    // Send tx to contract
+    console.log(`  ⏳ Sending tx to contract...`);
+    const hash = await walletClient.writeContract({
+      address: CONTRACT_ADDRESS,
+      abi: ABI,
+      functionName: "acceptTask",
+      args: [taskId],
+    });
+    console.log(`  📤 Tx: ${hash}`);
+
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    console.log(`  ✅ Confirmed in block ${receipt.blockNumber}`);
+    console.log(`  🔗 https://monadscan.com/tx/${hash}`);
+
+    // Update cache
+    task.worker = worker;
+    task.status = "ACCEPTED";
+    task.acceptTx = hash;
+    tasks.set(taskId, task);
+    broadcast("task:updated", task);
+
+    res.json(task);
+  } catch (err: any) {
+    console.error(`  ❌ Error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /tasks/:id/submit — Submit result ON-CHAIN
+ * Then platform auto-releases payment
+ * 
+ * Body: { worker, result }
+ * Returns: Task with submitTx (on-chain tx hash)
+ */
+app.post("/tasks/:id/submit", async (req, res) => {
+  try {
+    const { worker, result } = req.body;
+    const taskId = req.params.id;
+
+    if (!worker || !result) {
+      res.status(400).json({ error: "Missing: worker, result" });
+      return;
+    }
+
+    let task = tasks.get(taskId);
+    if (!task) {
+      task = await getTaskFromContract(taskId);
+      if (!task) {
+        res.status(404).json({ error: "Task not found" });
+        return;
+      }
+    }
+
+    if (task.status !== "ACCEPTED") {
+      res.status(400).json({ error: `Task is ${task.status}, not ACCEPTED` });
+      return;
+    }
+
+    console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`📦 SUBMIT RESULT (on-chain)`);
+    console.log(`  Task ID: ${taskId}`);
+    console.log(`  Worker: ${worker}`);
+    console.log(`  Result: ${result.slice(0, 80)}...`);
+
+    // Send tx to contract
+    console.log(`  ⏳ Sending tx to contract...`);
+    const hash = await walletClient.writeContract({
+      address: CONTRACT_ADDRESS,
+      abi: ABI,
+      functionName: "submitTask",
+      args: [taskId, result],
+    });
+    console.log(`  📤 Tx: ${hash}`);
+
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    console.log(`  ✅ Confirmed in block ${receipt.blockNumber}`);
+    console.log(`  🔗 https://monadscan.com/tx/${hash}`);
+
+    // Update cache
+    task.result = result;
+    task.status = "SUBMITTED";
+    task.submitTx = hash;
+    tasks.set(taskId, task);
+    broadcast("task:updated", task);
+
+    // Auto-release payment (platform's job)
+    setTimeout(() => releasePayout(taskId), 1500);
+
+    res.json(task);
+  } catch (err: any) {
+    console.error(`  ❌ Error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Release payout to worker (called automatically after submit)
+ */
+async function releasePayout(taskId: string) {
+  const task = tasks.get(taskId);
+  if (!task || task.status !== "SUBMITTED") return;
+
+  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  console.log(`💸 RELEASE PAYOUT (on-chain)`);
+  console.log(`  Task ID: ${taskId}`);
+  console.log(`  Worker: ${task.worker}`);
+  console.log(`  Amount: ${task.reward} MON`);
+
+  try {
+    console.log(`  ⏳ Sending tx to contract...`);
+    const hash = await walletClient.writeContract({
+      address: CONTRACT_ADDRESS,
+      abi: ABI,
+      functionName: "releasePayout",
+      args: [taskId],
+    });
+    console.log(`  📤 Tx: ${hash}`);
+
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    console.log(`  ✅ Confirmed in block ${receipt.blockNumber}`);
+    console.log(`  🔗 https://monadscan.com/tx/${hash}`);
+
+    // Update cache
+    task.status = "DONE";
+    task.payoutTx = hash;
+    tasks.set(taskId, task);
+    broadcast("task:updated", task);
+    refreshContractBalance();
+
+    console.log(`  🎉 Worker received ${task.reward} MON`);
+  } catch (err: any) {
+    console.error(`  ❌ Payout failed: ${err.message}`);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// QUERY ENDPOINTS
+// ══════════════════════════════════════════════════════════════════════
+
+app.get("/tasks", (req, res) => {
+  const status = req.query.status as string | undefined;
+  let taskList = Array.from(tasks.values());
+  if (status) {
+    taskList = taskList.filter((t) => t.status.toUpperCase() === status.toUpperCase());
+  }
+  taskList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  res.json(taskList);
+});
+
+app.get("/tasks/:id", async (req, res) => {
+  let task = tasks.get(req.params.id);
+  if (!task) task = await getTaskFromContract(req.params.id);
+  if (!task) {
+    res.status(404).json({ error: "Task not found" });
+    return;
+  }
+  res.json(task);
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// SSE
+// ══════════════════════════════════════════════════════════════════════
+
 app.get("/events", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  // Send initial heartbeat
-  res.write(`event: connected\ndata: ${JSON.stringify({ agent: "taskflow", ts: Date.now() })}\n\n`);
+  const clientId = Math.random().toString(36).slice(2);
+  sseClients.push({ id: clientId, res });
+  console.log(`📡 SSE connected: ${clientId}`);
 
-  sseClients.add(res);
+  res.write(`event: connected\ndata: ${JSON.stringify({ clientId })}\n\n`);
+
   req.on("close", () => {
-    sseClients.delete(res);
+    const idx = sseClients.findIndex((c) => c.id === clientId);
+    if (idx !== -1) sseClients.splice(idx, 1);
   });
 });
 
-// ── Create Task ─────────────────────────────────────────────────────
-app.post("/tasks", (req, res) => {
-  const { title, reward, requester } = req.body;
-
-  if (!title || !reward || !requester) {
-    return res.status(400).json({ error: "Missing required fields: title, reward, requester" });
-  }
-  if (isNaN(Number(reward)) || Number(reward) <= 0) {
-    return res.status(400).json({ error: "Reward must be a positive number" });
-  }
-  if (!requester.startsWith("0x")) {
-    return res.status(400).json({ error: "Requester must be a valid wallet address" });
-  }
-
-  const task = taskStore.create(title, reward, requester);
-  log(`📋 Task created: "${task.title}" → ${task.reward} MON (${task.id})`);
-  broadcast("task:created", task);
-  return res.status(201).json(task);
-});
-
-// ── List Tasks ──────────────────────────────────────────────────────
-app.get("/tasks", (req, res) => {
-  const status = req.query.status as string | undefined;
-  const tasks = status ? taskStore.list(status as TaskStatus) : taskStore.list();
-  res.json(tasks);
-});
-
-// ── Get Task ────────────────────────────────────────────────────────
-app.get("/tasks/:id", (req, res) => {
-  const task = taskStore.get(req.params.id);
-  if (!task) return res.status(404).json({ error: "Task not found" });
-  return res.json(task);
-});
-
-// ── Accept Task ─────────────────────────────────────────────────────
-app.post("/tasks/:id/accept", (req, res) => {
-  const { worker } = req.body;
-  if (!worker) return res.status(400).json({ error: "Missing worker address" });
-
-  try {
-    const task = taskStore.accept(req.params.id, worker);
-    log(`🤝 Task accepted: ${task.id} → worker ${worker}`);
-    broadcast("task:accepted", task);
-    return res.json(task);
-  } catch (e: any) {
-    return res.status(400).json({ error: e.message });
-  }
-});
-
-// ── Complete Task ───────────────────────────────────────────────────
-app.post("/tasks/:id/complete", (req, res) => {
-  const { worker } = req.body;
-  if (!worker) return res.status(400).json({ error: "Missing worker address" });
-
-  try {
-    const task = taskStore.complete(req.params.id, worker);
-    log(`✅ Task completed: ${task.id}`);
-    broadcast("task:completed", task);
-    return res.json(task);
-  } catch (e: any) {
-    return res.status(400).json({ error: e.message });
-  }
-});
-
-// ── Confirm & Pay ───────────────────────────────────────────────────
-app.post("/tasks/:id/confirm", async (req, res) => {
-  const { requester } = req.body;
-  if (!requester) return res.status(400).json({ error: "Missing requester address" });
-
-  try {
-    const task = taskStore.confirm(req.params.id, requester);
-    log(`✔️  Task confirmed: ${task.id}`);
-    broadcast("task:confirmed", task);
-
-    // Trigger MON payment if agent wallet is configured
-    if (AGENT_KEY && task.worker) {
-      log(`💰 Sending ${task.reward} MON → ${task.worker}`);
-      try {
-        const payment = await sendMON(AGENT_KEY, task.worker as Hex, task.reward);
-        taskStore.markPaid(task.id, payment.txHash);
-        log(`🎉 Paid! tx: ${payment.txHash}`);
-        broadcast("payment:sent", {
-          taskId: task.id,
-          txHash: payment.txHash,
-          amount: task.reward,
-          from: AGENT_ADDR,
-          to: task.worker,
-        });
-        return res.json({ ...taskStore.get(task.id), paymentTx: payment.txHash });
-      } catch (payErr: any) {
-        log(`❌ Payment failed: ${payErr.message}`);
-        broadcast("payment:failed", { taskId: task.id, error: payErr.message });
-        return res.status(500).json({ error: `Task confirmed but payment failed: ${payErr.message}`, task });
-      }
-    }
-
-    return res.json(task);
-  } catch (e: any) {
-    return res.status(400).json({ error: e.message });
-  }
-});
-
-// ─── Autonomous Monitor Loop ────────────────────────────────────────
-// The agent periodically checks for stuck/stale tasks and reports status.
-async function monitorLoop(): Promise<void> {
-  log("🔄 Monitor: scanning tasks...");
-
-  const all = taskStore.list();
-  const open = all.filter((t) => t.status === TaskStatus.Open);
-  const accepted = all.filter((t) => t.status === TaskStatus.Accepted);
-  const completed = all.filter((t) => t.status === TaskStatus.Completed);
-  const paid = all.filter((t) => t.status === TaskStatus.Paid);
-
-  // Check for stale tasks (open for more than 5 minutes)
-  const STALE_MS = 5 * 60 * 1000;
-  const now = Date.now();
-  for (const task of open) {
-    if (now - task.createdAt > STALE_MS) {
-      log(`⚠️  Stale task detected: ${task.id} "${task.title}" — open for ${Math.round((now - task.createdAt) / 1000)}s`);
-      broadcast("monitor:stale_task", { taskId: task.id, title: task.title, age: now - task.createdAt });
-    }
-  }
-
-  // Check for tasks stuck in completed (not confirmed for 2+ minutes)
-  const STUCK_MS = 2 * 60 * 1000;
-  for (const task of completed) {
-    if (now - task.updatedAt > STUCK_MS) {
-      log(`⚠️  Task awaiting confirmation: ${task.id} — completed ${Math.round((now - task.updatedAt) / 1000)}s ago`);
-      broadcast("monitor:awaiting_confirm", { taskId: task.id, title: task.title, age: now - task.updatedAt });
-    }
-  }
-
-  // Report wallet balance if configured
-  if (AGENT_ADDR) {
-    try {
-      const balance = await getBalance(AGENT_ADDR);
-      log(`💳 Agent wallet: ${AGENT_ADDR} — ${balance} MON`);
-    } catch {
-      log(`💳 Agent wallet: could not fetch balance`);
-    }
-  }
-
-  log(`📊 Tasks: ${open.length} open, ${accepted.length} active, ${completed.length} done, ${paid.length} paid (${all.length} total)`);
-}
-
-// ─── Startup ────────────────────────────────────────────────────────
+// ─── Start ──────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log("");
-  console.log("  ⚡ TaskFlow Agent v0.1.0");
-  console.log("  ─────────────────────────────────────");
-  console.log(`  API:        http://localhost:${PORT}`);
-  console.log(`  Events:     http://localhost:${PORT}/events`);
-  console.log(`  Skill file: http://localhost:${PORT}/skill.md`);
-  console.log(`  Health:     http://localhost:${PORT}/health`);
-  console.log(`  Wallet:     ${AGENT_ADDR ?? "not configured (set PRIVATE_KEY in .env)"}`);
-  console.log(`  Network:    Monad Mainnet (Chain ID: 143)`);
-  console.log("  ─────────────────────────────────────");
-  console.log("");
-
-  // Start autonomous monitor
-  monitorLoop();
-  setInterval(monitorLoop, MONITOR_INTERVAL);
+  console.log(`
+╔═══════════════════════════════════════════════════════════════════════╗
+║                    ◆ TASKFLOW PLATFORM (ON-CHAIN) ◆                   ║
+╠═══════════════════════════════════════════════════════════════════════╣
+║  Platform  : ${PLATFORM_ADDRESS}                    ║
+║  Contract  : ${CONTRACT_ADDRESS}                    ║
+║  Network   : Monad Mainnet (Chain 143)                                ║
+║  Port      : ${String(PORT).padEnd(57)}║
+║  Escrow    : ${cachedContractBalance.slice(0, 10).padEnd(47)} MON      ║
+╠═══════════════════════════════════════════════════════════════════════╣
+║  ALL API CALLS EXECUTE REAL ON-CHAIN TRANSACTIONS                     ║
+╠═══════════════════════════════════════════════════════════════════════╣
+║  POST /tasks              → contract.createTask() + escrow            ║
+║  POST /tasks/:id/accept   → contract.acceptTask()                     ║
+║  POST /tasks/:id/submit   → contract.submitTask() + auto payout       ║
+║  GET  /tasks              → list all tasks                            ║
+║  GET  /tasks/:id          → get single task (cache + chain)           ║
+║  GET  /events             → SSE real-time updates                     ║
+╠═══════════════════════════════════════════════════════════════════════╣
+║  Explorer: https://monadscan.com/address/${CONTRACT_ADDRESS.slice(0, 20)}   ║
+╚═══════════════════════════════════════════════════════════════════════╝
+  `);
 });

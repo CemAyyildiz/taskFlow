@@ -4,6 +4,7 @@
   "description": "TaskFlow — one agent delegates a task to another agent and pays in MON on Monad",
   "type": "module",
   "scripts": {
+    "platform": "tsx agents/taskflow-agent/index.ts",
     "agent": "tsx agents/taskflow-agent/index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit"
@@ -25,7 +26,9 @@
     "viem": "^2.45.2"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.6"
+    "@types/express": "^5.0.6",
+    "hardhat": "^2.28.5"
   }
 }

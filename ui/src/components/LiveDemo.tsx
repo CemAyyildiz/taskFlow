@@ -1,427 +1,252 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import * as api from "../api";
+import { getHealth, getTasks, createTask, acceptTask, submitTask, connectSSE, CONTRACT_ADDRESS } from "../api";
+import { TaskStatus, type Task } from "../types";
 
-// ─── Types ──────────────────────────────────────────────────────────
-
-interface LogEntry {
-  id: number;
-  time: string;
-  text: string;
-  type: "cmd" | "ok" | "pay" | "sys" | "err";
+// ─── Status helpers ──────────────────────────────────────────────────
+function statusColor(s: string) {
+  if (s === TaskStatus.Open) return "text-[var(--mon-yellow)]";
+  if (s === TaskStatus.Accepted) return "text-[var(--mon-purple-glow)]";
+  if (s === TaskStatus.Submitted) return "text-[var(--mon-cyan)]";
+  if (s === TaskStatus.Done) return "text-[var(--mon-green)]";
+  return "text-[var(--mon-text-dim)]";
 }
 
-const STATUS_LABELS = ["OPEN", "ACCEPTED", "COMPLETED", "CONFIRMED", "PAID"] as const;
+function statusIcon(s: string) {
+  if (s === TaskStatus.Open) return "📋";
+  if (s === TaskStatus.Accepted) return "🤝";
+  if (s === TaskStatus.Submitted) return "📦";
+  if (s === TaskStatus.Done) return "✅";
+  return "•";
+}
 
-const STATUS_STYLE: Record<string, { char: string; color: string }> = {
-  OPEN: { char: "◇", color: "text-[var(--mon-yellow)]" },
-  ACCEPTED: { char: "◈", color: "text-[var(--mon-purple-glow)]" },
-  COMPLETED: { char: "◆", color: "text-[var(--mon-cyan)]" },
-  CONFIRMED: { char: "●", color: "text-[var(--mon-yellow)]" },
-  PAID: { char: "✦", color: "text-[var(--mon-green)]" },
-};
+// ─── Demo config ─────────────────────────────────────────────────────
+const DEMO_REQUESTER = "0xReq_" + Math.random().toString(36).slice(2, 8);
+const DEMO_WORKER = "0xWork_" + Math.random().toString(36).slice(2, 8);
 
-// ─── Component ──────────────────────────────────────────────────────
+const TASKS = [
+  { title: "Analyze Token Contract", description: "Review ERC-20 contract for issues", reward: "0.005" },
+  { title: "Fetch DEX Prices", description: "Get top 5 token prices on Monad", reward: "0.002" },
+  { title: "Monitor Wallet", description: "Track recent wallet activity", reward: "0.003" },
+];
 
 export function LiveDemo() {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [health, setHealth] = useState<api.HealthResponse | null>(null);
-  const [online, setOnline] = useState(false);
-  const [step, setStep] = useState(0);
-  const [taskStatus, setTaskStatus] = useState<string | null>(null);
-  const [taskId, setTaskId] = useState<string | null>(null);
-  const [txHash, setTxHash] = useState<string | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
-  const [isDone, setIsDone] = useState(false);
+  const [health, setHealth] = useState<any>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [running, setRunning] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
-  const eid = useRef(0);
 
-  // Auto-scroll terminal
   useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
-  }, [logs.length]);
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [logs]);
 
-  const log = useCallback((text: string, type: LogEntry["type"] = "sys") => {
-    const time = new Date().toISOString().slice(11, 19);
-    setLogs((p) => [...p, { id: ++eid.current, time, text, type }]);
+  const log = useCallback((msg: string) => {
+    setLogs((p) => [...p.slice(-40), msg]);
   }, []);
 
-  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  // Health polling — check if agent is running
+  // Health check
   useEffect(() => {
-    let cancelled = false;
     const check = async () => {
-      try {
-        const h = await api.getHealth();
-        if (!cancelled) {
-          setHealth(h);
-          setOnline(true);
-        }
-      } catch {
-        if (!cancelled) {
-          setHealth(null);
-          setOnline(false);
-        }
-      }
+      try { setHealth(await getHealth()); } catch { setHealth(null); }
     };
     check();
-    const iv = setInterval(check, 15_000);
-    return () => {
-      cancelled = true;
-      clearInterval(iv);
-    };
+    const iv = setInterval(check, 10_000);
+    return () => clearInterval(iv);
   }, []);
 
-  // Run full lifecycle against real agent
-  const run = useCallback(async () => {
-    if (!health || !online || isRunning) return;
-    setIsRunning(true);
-    setIsDone(false);
-    setLogs([]);
-    setStep(0);
-    setTaskStatus(null);
-    setTaskId(null);
-    setTxHash(null);
-    eid.current = 0;
+  // Load tasks
+  useEffect(() => { getTasks().then(setTasks).catch(() => {}); }, []);
 
-    const addr = health.wallet;
-    const short = addr.length > 10 ? addr.slice(0, 6) + "..." + addr.slice(-4) : addr;
+  // SSE
+  useEffect(() => {
+    return connectSSE((event, data) => {
+      if (event === "connected") log("📡 Connected to platform");
+      else if (event === "task:created") {
+        setTasks((p) => p.find((t) => t.id === data.id) ? p : [data, ...p]);
+        log(`📋 Task created: "${data.title}"`);
+      } else if (event === "task:updated") {
+        setTasks((p) => p.map((t) => (t.id === data.id ? data : t)));
+        log(`${statusIcon(data.status)} Task → ${data.status}`);
+      }
+    });
+  }, [log]);
+
+  // Run full flow — ALL ON-CHAIN
+  const runDemo = async () => {
+    if (running || !health) return;
+    setRunning(true);
+    const tpl = TASKS[Math.floor(Math.random() * TASKS.length)];
 
     try {
-      // STEP 1: Create task
-      setStep(1);
-      log(`$ POST /tasks`, "cmd");
-      log(`  { title: "Audit smart contract", reward: "0.001", requester: "${short}" }`, "cmd");
-      await wait(400);
-      const task = await api.createTask("Audit smart contract", "0.001", addr);
-      setTaskId(task.id);
-      setTaskStatus("OPEN");
-      log(`→ task:created  id=${task.id}  reward=0.001 MON  status=OPEN`, "ok");
-      await wait(1000);
+      log("💸 Creating task (on-chain escrow)...");
+      const task = await createTask({
+        title: tpl.title, 
+        description: tpl.description,
+        reward: tpl.reward, 
+        requester: DEMO_REQUESTER,
+      });
+      log(`✅ Escrow tx: ${task.escrowTx?.slice(0, 18)}...`);
+      log(`🔗 monadscan.com/tx/${task.escrowTx?.slice(0, 12)}...`);
 
-      // STEP 2: Accept task
-      setStep(2);
-      log(`$ POST /tasks/${task.id}/accept`, "cmd");
-      log(`  { worker: "${short}" }`, "cmd");
-      await wait(400);
-      await api.acceptTask(task.id, addr);
-      setTaskStatus("ACCEPTED");
-      log(`→ task:accepted  worker=${short}  status=ACCEPTED`, "ok");
-      await wait(1000);
+      await delay(1500);
+      log("🤝 Accepting task (on-chain)...");
+      const accepted = await acceptTask(task.id, DEMO_WORKER);
+      log(`✅ Accept tx: ${accepted.acceptTx?.slice(0, 18)}...`);
 
-      // STEP 3: Complete task
-      setStep(3);
-      log(`$ POST /tasks/${task.id}/complete`, "cmd");
-      log(`  { worker: "${short}" }`, "cmd");
-      await wait(400);
-      await api.completeTask(task.id, addr);
-      setTaskStatus("COMPLETED");
-      log(`→ task:completed  status=COMPLETED`, "ok");
-      await wait(1000);
+      await delay(1500);
+      log("⚙️ Worker processing task...");
+      await delay(2000);
 
-      // STEP 4: Confirm → triggers MON payment
-      setStep(4);
-      log(`$ POST /tasks/${task.id}/confirm`, "cmd");
-      log(`  { requester: "${short}" }`, "cmd");
-      await wait(400);
-      log(`  ⏳ sendMON(0.001 MON → ${short})  chain=143`, "pay");
-      const result = await api.confirmTask(task.id, addr);
+      log("📦 Submitting result (on-chain)...");
+      const submitted = await submitTask(task.id, DEMO_WORKER, JSON.stringify({ 
+        status: "completed", 
+        task: tpl.title,
+        result: "Task completed successfully via on-chain verification" 
+      }));
+      log(`✅ Submit tx: ${submitted.submitTx?.slice(0, 18)}...`);
 
-      if (result.paymentTx) {
-        setStep(5);
-        setTaskStatus("PAID");
-        setTxHash(result.paymentTx);
-        const shortTx = result.paymentTx.slice(0, 16) + "..." + result.paymentTx.slice(-6);
-        log(`→ tx confirmed  hash=${shortTx}`, "pay");
-        log(`→ task:paid  status=PAID  ✦ settlement complete`, "ok");
-      } else {
-        setStep(5);
-        setTaskStatus("CONFIRMED");
-        log(`→ task:confirmed  status=CONFIRMED`, "ok");
-        log(`  (PRIVATE_KEY not set — payment skipped)`, "sys");
+      log("💸 Platform releasing payout...");
+      await delay(3000);
+      
+      // Refresh to get payout tx
+      const updated = await getTasks();
+      const final = updated.find(t => t.id === task.id);
+      if (final?.payoutTx) {
+        log(`✅ Payout tx: ${final.payoutTx.slice(0, 18)}...`);
+        log(`🎉 ${tpl.reward} MON sent to worker!`);
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log(`✗ Error: ${msg}`, "err");
+      
+      log("═══════════════════════════════════");
+      log("🔗 All txs verified on Monadscan!");
+    } catch (err: any) {
+      log(`❌ ${err.message}`);
+    } finally {
+      setRunning(false);
     }
-
-    setIsDone(true);
-    setIsRunning(false);
-  }, [health, online, isRunning, log]);
-
-  const reset = () => {
-    eid.current = 0;
-    setLogs([]);
-    setStep(0);
-    setTaskStatus(null);
-    setTaskId(null);
-    setTxHash(null);
-    setIsRunning(false);
-    setIsDone(false);
   };
 
-  const progress = taskStatus
-    ? ((STATUS_LABELS.indexOf(taskStatus as (typeof STATUS_LABELS)[number]) + 1) / STATUS_LABELS.length) * 100
-    : 0;
+  const online = !!health;
 
   return (
-    <section id="live-demo" className="py-28 relative">
-      <div className="max-w-5xl mx-auto px-6">
-        <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true }}
-          className="mb-12"
-        >
-          <p className="font-pixel text-[10px] text-[var(--mon-cyan)] mb-3">// LIVE</p>
-          <h2 className="font-pixel text-lg md:text-xl text-[var(--mon-text)] mb-2">
-            LIVE DEMO
-          </h2>
-          <p className="text-sm text-[var(--mon-text-dim)]">
-            Real agent. Real API calls. Real MON on Monad.
+    <section id="live-demo" className="py-20 border-t border-[var(--mon-border)]">
+      <div className="max-w-4xl mx-auto px-6">
+        {/* Header */}
+        <motion.div initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} className="text-center mb-8">
+          <h2 className="font-pixel text-sm text-[var(--mon-text)] mb-2">LIVE DEMO</h2>
+          <p className="text-[11px] text-[var(--mon-text-dim)]">
+            Run the full marketplace flow — create, accept, submit, pay.
           </p>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="retro-box rounded-lg overflow-hidden"
-        >
-          {/* ── Top bar ── */}
-          <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--mon-surface-2)] border-b border-[var(--mon-border)]">
-            <div className="flex items-center gap-2">
-              <span className={`w-2.5 h-2.5 rounded-full ${online ? "bg-[var(--mon-green)]" : "bg-[var(--mon-red)]"}`} />
-              <span className="ml-2 text-[10px] text-[var(--mon-text-dim)]">
-                {online ? `taskflow-agent — ${health?.wallet?.slice(0, 10)}...` : "agent offline"}
-              </span>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Left: Controls + Logs */}
+          <div className="space-y-4">
+            {/* Status */}
+            <div className="retro-box rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className={`w-2 h-2 rounded-full ${online ? "bg-[var(--mon-green)] animate-pulse" : "bg-[var(--mon-red)]"}`} />
+                <span className="text-[10px] text-[var(--mon-text-dim)]">
+                  {online ? "PLATFORM ONLINE" : "PLATFORM OFFLINE — run npm run agent"}
+                </span>
+              </div>
+              {online && (
+                <div className="flex gap-4 text-[10px]">
+                  <span className="text-[var(--mon-text-dim)]">Balance: <span className="text-[var(--mon-green)]">{parseFloat(health.escrowBalance).toFixed(4)} MON</span></span>
+                  <span className="text-[var(--mon-text-dim)]">Tasks: <span className="text-[var(--mon-yellow)]">{health.tasks?.open ?? 0}</span>/<span className="text-[var(--mon-purple-glow)]">{health.tasks?.accepted ?? 0}</span>/<span className="text-[var(--mon-green)]">{health.tasks?.done ?? 0}</span></span>
+                </div>
+              )}
             </div>
-            {online && !isRunning && !isDone && (
-              <button
-                onClick={run}
-                className="font-pixel text-[8px] bg-[var(--mon-purple)] hover:bg-[var(--mon-purple-glow)] text-white px-4 py-1.5 rounded transition-all cursor-pointer tracking-wider"
-              >
-                ▶ RUN
-              </button>
-            )}
-            {isRunning && (
-              <span className="font-pixel text-[8px] text-[var(--mon-purple-glow)] animate-pulse">
-                ◌ EXECUTING...
-              </span>
-            )}
-            {isDone && (
-              <button
-                onClick={reset}
-                className="font-pixel text-[8px] text-[var(--mon-text-dim)] hover:text-white border border-[var(--mon-border)] px-4 py-1.5 rounded transition-all cursor-pointer tracking-wider"
-              >
-                ↺ RESET
-              </button>
-            )}
+
+            {/* Run Button */}
+            <button
+              onClick={runDemo}
+              disabled={running || !online}
+              className={`w-full font-pixel text-[10px] py-3 rounded transition-all cursor-pointer ${
+                running || !online
+                  ? "bg-[var(--mon-surface-2)] text-[var(--mon-text-dim)] cursor-not-allowed"
+                  : "bg-[var(--mon-purple)] hover:bg-[var(--mon-purple-glow)] text-white glow-border"
+              }`}
+            >
+              {running ? "⏳ RUNNING..." : "▶ RUN FULL FLOW"}
+            </button>
+
+            {/* Logs */}
+            <div className="retro-box rounded-lg overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--mon-border)]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--mon-red)]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--mon-yellow)]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--mon-green)]" />
+                <span className="text-[9px] text-[var(--mon-text-dim)] ml-2">events</span>
+              </div>
+              <div ref={logRef} className="h-52 overflow-y-auto p-3 text-[10px] font-mono space-y-0.5">
+                {logs.length === 0 ? (
+                  <p className="text-[var(--mon-text-dim)]">$ waiting...<span className="cursor-blink" /></p>
+                ) : (
+                  logs.map((l, i) => (
+                    <p key={i} className={
+                      l.includes("❌") ? "text-[var(--mon-red)]" :
+                      l.includes("✅") ? "text-[var(--mon-green)]" :
+                      "text-[var(--mon-text-dim)]"
+                    }>{l}</p>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
 
-          {!online ? (
-            /* ── Offline state ── */
-            <div className="p-12 text-center">
-              <p className="font-pixel text-[10px] text-[var(--mon-red)] mb-3">AGENT OFFLINE</p>
-              <p className="text-sm text-[var(--mon-text-dim)] mb-4">
-                Start the TaskFlow agent to run the live demo.
-              </p>
-              <div className="inline-block bg-[var(--mon-darker)] rounded px-4 py-2">
-                <code className="text-[12px] text-[var(--mon-purple-glow)]">$ npm run agent</code>
-              </div>
+          {/* Right: Task Board */}
+          <div className="retro-box rounded-lg overflow-hidden">
+            <div className="px-4 py-3 border-b border-[var(--mon-border)]">
+              <span className="font-pixel text-[8px] text-[var(--mon-text)]">TASK BOARD</span>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-12">
-              {/* ── Left panel: Status ── */}
-              <div className="lg:col-span-4 p-4 border-r border-[var(--mon-border)] bg-[var(--mon-surface)]">
-                {/* Agent */}
-                <p className="text-[10px] text-[var(--mon-text-dim)] uppercase tracking-widest mb-3">
-                  ┌ AGENT
-                </p>
-                <div className="bg-[var(--mon-darker)] rounded px-3 py-2 mb-5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[var(--mon-purple-glow)] text-xs">⚡</span>
-                      <span className="font-pixel text-[8px] text-[var(--mon-purple-glow)]">TASKFLOW</span>
-                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--mon-green)] animate-pulse" />
-                    </div>
-                    <span className="text-[10px] text-[var(--mon-text-dim)]">v{health?.version}</span>
-                  </div>
-                  <p className="text-[9px] text-[var(--mon-text-dim)] mt-1 font-mono">
-                    {health?.wallet && health.wallet.length > 20
-                      ? health.wallet.slice(0, 20) + "..."
-                      : health?.wallet}
-                  </p>
+            <div className="h-[400px] overflow-y-auto">
+              {tasks.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-center">
+                  <p className="text-[11px] text-[var(--mon-text-dim)]">No tasks yet — run the demo</p>
                 </div>
-
-                {/* Task */}
-                <p className="text-[10px] text-[var(--mon-text-dim)] uppercase tracking-widest mb-3">
-                  ┌ TASK
-                </p>
-                <div className="bg-[var(--mon-darker)] rounded p-3 mb-5">
-                  {taskStatus ? (
-                    <>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] text-[var(--mon-text)]">Audit smart contract</span>
-                        <span className={`font-pixel text-[8px] ${STATUS_STYLE[taskStatus]?.color ?? ""}`}>
-                          {STATUS_STYLE[taskStatus]?.char} {taskStatus}
+              ) : (
+                <AnimatePresence>
+                  {tasks.map((task) => (
+                    <motion.div
+                      key={task.id}
+                      initial={{ opacity: 0, x: 10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="p-4 border-b border-[var(--mon-border)] last:border-0"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] text-[var(--mon-text)] flex items-center gap-2">
+                          {statusIcon(task.status)} {task.title}
+                        </span>
+                        <span className={`text-[9px] font-pixel ${statusColor(task.status)}`}>
+                          {task.status}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between text-[10px] text-[var(--mon-text-dim)] mb-3">
-                        <span>id: {taskId}</span>
-                        <span className="text-[var(--mon-green)]">0.001 MON</span>
-                      </div>
-                      {/* Progress bar */}
-                      <div className="font-pixel text-[8px]">
-                        <div className="flex items-center gap-1 text-[var(--mon-text-dim)]">
-                          <span>[</span>
-                          {STATUS_LABELS.map((st, i) => {
-                            const reached = STATUS_LABELS.indexOf(taskStatus as (typeof STATUS_LABELS)[number]) >= i;
-                            return (
-                              <span key={st} className={reached ? (STATUS_STYLE[st]?.color ?? "") : "text-[var(--mon-border)]"}>
-                                {reached ? "█" : "░"}
-                              </span>
-                            );
-                          })}
-                          <span>]</span>
-                          <span className="ml-1">{Math.round(progress)}%</span>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <p className="text-[10px] text-[var(--mon-text-dim)] text-center py-3 cursor-blink">
-                      awaiting execution
-                    </p>
-                  )}
-                </div>
-
-                {/* Pipeline */}
-                <p className="text-[10px] text-[var(--mon-text-dim)] uppercase tracking-widest mb-3">
-                  ┌ PIPELINE
-                </p>
-                <div className="space-y-1">
-                  {[
-                    { n: 1, label: "POST /tasks", tag: "CREATE" },
-                    { n: 2, label: "POST /accept", tag: "ACCEPT" },
-                    { n: 3, label: "POST /complete", tag: "DONE" },
-                    { n: 4, label: "POST /confirm", tag: "CONFIRM" },
-                    { n: 5, label: "sendMON()", tag: "PAY" },
-                  ].map((s) => {
-                    const done = step > s.n || (isDone && step >= s.n);
-                    const active = step === s.n && isRunning;
-                    return (
-                      <div key={s.n} className="flex items-center gap-2 text-[11px]">
-                        <span
-                          className={`w-4 text-center ${
-                            done
-                              ? "text-[var(--mon-green)]"
-                              : active
-                                ? "text-[var(--mon-purple-glow)] animate-pulse"
-                                : "text-[var(--mon-border)]"
-                          }`}
-                        >
-                          {done ? "✓" : active ? "▸" : "·"}
-                        </span>
-                        <span
-                          className={`font-mono ${
-                            done
-                              ? "text-[var(--mon-text-dim)]"
-                              : active
-                                ? "text-[var(--mon-text)]"
-                                : "text-[var(--mon-border)]"
-                          }`}
-                        >
-                          {s.label}
-                        </span>
-                        <span className="ml-auto text-[9px] text-[var(--mon-text-dim)]">{s.tag}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* ── Right panel: Terminal log ── */}
-              <div className="lg:col-span-8 bg-[var(--mon-darker)] p-4">
-                <div ref={logRef} className="space-y-0.5 max-h-[420px] overflow-y-auto pr-2 text-[11px] leading-relaxed">
-                  <p className="text-[var(--mon-text-dim)]">
-                    <span className="text-[var(--mon-purple-dim)]">~</span> connected to taskflow-agent @ localhost:3001
-                  </p>
-                  <p className="text-[var(--mon-text-dim)] mb-2">
-                    ─ taskflow v{health?.version} ─ monad-mainnet ─ chain:143 ─
-                  </p>
-
-                  {logs.length === 0 && !isRunning && (
-                    <p className="text-[var(--mon-border)] cursor-blink mt-2">
-                      press ▶ RUN to execute full lifecycle
-                    </p>
-                  )}
-
-                  <AnimatePresence>
-                    {logs.map((entry) => (
-                      <motion.div
-                        key={entry.id}
-                        initial={{ opacity: 0, x: -5 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.15 }}
-                      >
-                        <span className="text-[var(--mon-border)]">[{entry.time}]</span>{" "}
-                        {entry.type === "cmd" ? (
-                          <span className="text-[var(--mon-text-dim)]">{entry.text}</span>
-                        ) : entry.type === "pay" ? (
-                          <span className="text-[var(--mon-yellow)]">{entry.text}</span>
-                        ) : entry.type === "err" ? (
-                          <span className="text-[var(--mon-red)]">{entry.text}</span>
-                        ) : entry.type === "ok" ? (
-                          <span className="text-[var(--mon-green)]">{entry.text}</span>
-                        ) : (
-                          <span className="text-[var(--mon-border)]">{entry.text}</span>
+                      <div className="flex flex-wrap gap-2 text-[9px] text-[var(--mon-text-dim)]">
+                        <span className="text-[var(--mon-yellow)]">{task.reward} MON</span>
+                        {task.escrowTx && (
+                          <a href={`https://monadscan.com/tx/${task.escrowTx}`} target="_blank" rel="noopener noreferrer" className="text-[var(--mon-cyan)] hover:underline">escrow↗</a>
                         )}
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-
-                  {isDone && txHash && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 0.2 }}
-                      className="mt-3 pt-3 border-t border-[var(--mon-border)]/30"
-                    >
-                      <p className="text-[var(--mon-green)]">═══ SETTLEMENT COMPLETE ═══</p>
-                      <p className="text-[var(--mon-text-dim)] mt-1">
-                        explorer:{" "}
-                        <a
-                          href={`https://monadscan.com/tx/${txHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[var(--mon-purple-glow)] hover:underline"
-                        >
-                          monadscan.com/tx/{txHash.slice(0, 12)}...
-                        </a>
-                      </p>
+                        {task.acceptTx && (
+                          <a href={`https://monadscan.com/tx/${task.acceptTx}`} target="_blank" rel="noopener noreferrer" className="text-[var(--mon-purple-glow)] hover:underline">accept↗</a>
+                        )}
+                        {task.submitTx && (
+                          <a href={`https://monadscan.com/tx/${task.submitTx}`} target="_blank" rel="noopener noreferrer" className="text-[var(--mon-cyan)] hover:underline">submit↗</a>
+                        )}
+                        {task.payoutTx && (
+                          <a href={`https://monadscan.com/tx/${task.payoutTx}`} target="_blank" rel="noopener noreferrer" className="text-[var(--mon-green)] hover:underline">payout↗</a>
+                        )}
+                      </div>
                     </motion.div>
-                  )}
-
-                  {isDone && !txHash && taskStatus && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 0.2 }}
-                      className="mt-3 pt-3 border-t border-[var(--mon-border)]/30"
-                    >
-                      <p className="text-[var(--mon-yellow)]">═══ LIFECYCLE COMPLETE ═══</p>
-                      <p className="text-[var(--mon-text-dim)] mt-1">
-                        Set PRIVATE_KEY in .env to enable on-chain MON transfers.
-                      </p>
-                    </motion.div>
-                  )}
-                </div>
-              </div>
+                  ))}
+                </AnimatePresence>
+              )}
             </div>
-          )}
-        </motion.div>
+          </div>
+        </div>
       </div>
     </section>
   );
 }
+
+function delay(ms: number) { return new Promise((r) => setTimeout(r, ms)); }

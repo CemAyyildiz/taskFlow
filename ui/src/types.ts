@@ -1,22 +1,26 @@
-// ─── Task Types (mirrors shared/types.ts) ───────────────────────────
+// ─── Task Status (const object for erasableSyntaxOnly) ──────────────
 export const TaskStatus = {
   Open: "OPEN",
   Accepted: "ACCEPTED",
-  Completed: "COMPLETED",
-  Confirmed: "CONFIRMED",
-  Paid: "PAID",
+  Submitted: "SUBMITTED",
+  Done: "DONE",
 } as const;
 
-export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus];
+export type TaskStatusType = (typeof TaskStatus)[keyof typeof TaskStatus];
 
+// ─── Task ───────────────────────────────────────────────────────────
 export interface Task {
   id: string;
   title: string;
+  description: string;
   reward: string;
-  status: TaskStatus;
+  status: TaskStatusType;
   requester: string;
   worker: string | null;
-  paymentTx: string | null;
+  escrowTx: string;
+  escrowVerified: boolean;
+  payoutTx: string | null;
+  result: string | null;
   createdAt: number;
   updatedAt: number;
 }

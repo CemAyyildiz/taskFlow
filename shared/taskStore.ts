@@ -1,20 +1,31 @@
 import { Task, TaskStatus } from "./types.js";
 import { randomUUID } from "node:crypto";
 
-// ─── In-Memory Task Store ───────────────────────────────────────────
+// ─── In-Memory Task Store (Marketplace) ─────────────────────────────
 class TaskStore {
   private tasks: Map<string, Task> = new Map();
 
-  /** Create a new task and return it */
-  create(title: string, reward: string, requesterAddress: string): Task {
+  /** Requester creates a task after paying escrow to platform */
+  create(opts: {
+    title: string;
+    description: string;
+    reward: string;
+    requester: string;
+    escrowTx: string;
+    escrowVerified: boolean;
+  }): Task {
     const task: Task = {
       id: randomUUID().slice(0, 8),
-      title,
-      reward,
+      title: opts.title,
+      description: opts.description,
+      reward: opts.reward,
       status: TaskStatus.Open,
-      requester: requesterAddress,
+      requester: opts.requester,
       worker: null,
-      paymentTx: null,
+      escrowTx: opts.escrowTx,
+      escrowVerified: opts.escrowVerified,
+      payoutTx: null,
+      result: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -22,22 +33,23 @@ class TaskStore {
     return task;
   }
 
-  /** Get a task by ID */
   get(id: string): Task | undefined {
     return this.tasks.get(id);
   }
 
-  /** List all tasks, optionally filtered by status */
   list(status?: TaskStatus): Task[] {
     const all = [...this.tasks.values()];
     return status ? all.filter((t) => t.status === status) : all;
   }
 
-  /** Worker accepts an open task */
+  /** Worker agent accepts an open task */
   accept(taskId: string, workerAddress: string): Task {
     const task = this.mustGet(taskId);
     if (task.status !== TaskStatus.Open) {
-      throw new Error(`Task ${taskId} is not open (status: ${task.status})`);
+      throw new Error(`Task ${taskId} is not OPEN (status: ${task.status})`);
+    }
+    if (task.requester.toLowerCase() === workerAddress.toLowerCase()) {
+      throw new Error("Requester cannot accept their own task");
     }
     task.status = TaskStatus.Accepted;
     task.worker = workerAddress;
@@ -45,55 +57,38 @@ class TaskStore {
     return task;
   }
 
-  /** Worker marks task as completed */
-  complete(taskId: string, workerAddress: string): Task {
+  /** Worker agent submits result */
+  submit(taskId: string, workerAddress: string, result: string): Task {
     const task = this.mustGet(taskId);
     if (task.status !== TaskStatus.Accepted) {
-      throw new Error(`Task ${taskId} is not accepted (status: ${task.status})`);
+      throw new Error(`Task ${taskId} is not ACCEPTED (status: ${task.status})`);
     }
-    if (task.worker !== workerAddress) {
-      throw new Error(`Only the assigned worker can complete task ${taskId}`);
+    if (task.worker?.toLowerCase() !== workerAddress.toLowerCase()) {
+      throw new Error("Only the assigned worker can submit results");
     }
-    task.status = TaskStatus.Completed;
+    task.status = TaskStatus.Submitted;
+    task.result = result;
     task.updatedAt = Date.now();
     return task;
   }
 
-  /** Requester confirms task completion */
-  confirm(taskId: string, requesterAddress: string): Task {
+  /** Platform verifies and releases payment → DONE */
+  complete(taskId: string, payoutTx: string): Task {
     const task = this.mustGet(taskId);
-    if (task.status !== TaskStatus.Completed) {
-      throw new Error(`Task ${taskId} is not completed (status: ${task.status})`);
+    if (task.status !== TaskStatus.Submitted) {
+      throw new Error(`Task ${taskId} is not SUBMITTED (status: ${task.status})`);
     }
-    if (task.requester !== requesterAddress) {
-      throw new Error(`Only the requester can confirm task ${taskId}`);
-    }
-    task.status = TaskStatus.Confirmed;
+    task.status = TaskStatus.Done;
+    task.payoutTx = payoutTx;
     task.updatedAt = Date.now();
     return task;
   }
 
-  /** Mark task as paid after successful token transfer */
-  markPaid(taskId: string, txHash: string): Task {
-    const task = this.mustGet(taskId);
-    if (task.status !== TaskStatus.Confirmed) {
-      throw new Error(`Task ${taskId} is not confirmed (status: ${task.status})`);
-    }
-    task.status = TaskStatus.Paid;
-    task.paymentTx = txHash;
-    task.updatedAt = Date.now();
-    return task;
-  }
-
-  /** Internal: get task or throw */
   private mustGet(id: string): Task {
     const task = this.tasks.get(id);
-    if (!task) {
-      throw new Error(`Task not found: ${id}`);
-    }
+    if (!task) throw new Error(`Task not found: ${id}`);
     return task;
   }
 }
 
-// Singleton store shared by all agents
 export const taskStore = new TaskStore();
