@@ -1,51 +1,150 @@
 @import "tailwindcss";
 
-/* Custom dark theme for Agent Marketplace */
+/* ═══ RETRO MONAD THEME ═══════════════════════════════════════════ */
 :root {
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-card: #1a1a2e;
-  --bg-card-hover: #22223a;
-  --border: #2a2a3e;
-  --text-primary: #e4e4ef;
-  --text-secondary: #8888a4;
-  --accent-purple: #7c3aed;
-  --accent-blue: #3b82f6;
-  --accent-green: #10b981;
-  --accent-orange: #f59e0b;
-  --accent-red: #ef4444;
-  --accent-cyan: #06b6d4;
+  --mon-purple: #836EF9;
+  --mon-purple-dim: #5B44B2;
+  --mon-purple-glow: #A78BFA;
+  --mon-dark: #0B0B12;
+  --mon-darker: #07070C;
+  --mon-surface: #111119;
+  --mon-surface-2: #19192A;
+  --mon-border: #2A2A44;
+  --mon-text: #C4C4D4;
+  --mon-text-dim: #6B6B8A;
+  --mon-green: #4ADE80;
+  --mon-cyan: #22D3EE;
+  --mon-yellow: #FACC15;
+  --mon-red: #F87171;
 }
 
 body {
   margin: 0;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--mon-darker);
+  color: var(--mon-text);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg-secondary); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #3a3a5e; }
-
-/* Glow animation for active elements */
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 5px rgba(124, 58, 237, 0.3); }
-  50% { box-shadow: 0 0 20px rgba(124, 58, 237, 0.6); }
+/* CRT Scanlines overlay */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.08) 2px,
+    rgba(0, 0, 0, 0.08) 4px
+  );
 }
 
-@keyframes slide-in {
-  from { opacity: 0; transform: translateY(10px); }
+/* CRT vignette */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.4) 100%);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--mon-darker); }
+::-webkit-scrollbar-thumb { background: var(--mon-purple-dim); border-radius: 2px; }
+
+/* Pixel font for headings */
+.font-pixel {
+  font-family: 'Press Start 2P', monospace;
+}
+
+/* Glitch text effect */
+@keyframes glitch {
+  0%, 100% { text-shadow: 2px 0 var(--mon-purple), -2px 0 var(--mon-cyan); }
+  25% { text-shadow: -2px 0 var(--mon-purple), 2px 0 var(--mon-cyan); }
+  50% { text-shadow: 2px 2px var(--mon-purple), -1px -1px var(--mon-cyan); }
+  75% { text-shadow: -1px 0 var(--mon-purple), 1px 0 var(--mon-cyan); }
+}
+
+.glitch-text {
+  animation: glitch 3s ease-in-out infinite;
+}
+
+/* Flicker animation */
+@keyframes flicker {
+  0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { opacity: 1; }
+  20%, 24%, 55% { opacity: 0.6; }
+}
+
+.flicker {
+  animation: flicker 4s linear infinite;
+}
+
+/* Terminal cursor blink */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink::after {
+  content: "█";
+  animation: blink 1s step-end infinite;
+  color: var(--mon-purple);
+}
+
+/* Slide up animation */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.animate-slide-in {
-  animation: slide-in 0.3s ease-out forwards;
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out forwards;
 }
 
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
+/* Typing animation */
+@keyframes typing {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+/* Glow border */
+.glow-border {
+  box-shadow: 0 0 0 1px var(--mon-purple-dim), 0 0 15px -3px rgba(131, 110, 249, 0.15);
+}
+
+/* Monad purple gradient text */
+.text-monad {
+  background: linear-gradient(135deg, var(--mon-purple-glow), var(--mon-purple), var(--mon-cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Retro box */
+.retro-box {
+  border: 1px solid var(--mon-border);
+  background: var(--mon-surface);
+  position: relative;
+}
+
+.retro-box::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 8px;
+  right: 8px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--mon-purple-dim), transparent);
+}
+
+/* Selection */
+::selection {
+  background: var(--mon-purple);
+  color: white;
 }

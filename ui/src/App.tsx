@@ -1,80 +1,65 @@
-import { Header } from "./components/Header";
-import { AgentCard } from "./components/AgentCard";
-import { TaskCard } from "./components/TaskCard";
-import { StepRunner } from "./components/StepRunner";
-import { EventLogPanel } from "./components/EventLogPanel";
-import { useDemoStore } from "./useDemoStore";
+import { useRef } from "react";
+import { Hero } from "./components/Hero";
+import { HowItWorks } from "./components/HowItWorks";
+import { LiveDemo } from "./components/LiveDemo";
+import { Architecture } from "./components/Architecture";
+import { TechStack, Footer } from "./components/TechStackFooter";
 
 function App() {
-  const {
-    task,
-    steps,
-    events,
-    requester,
-    worker,
-    currentStep,
-    isRunning,
-    isDone,
-    runNextStep,
-    reset,
-  } = useDemoStore();
+  const demoRef = useRef<HTMLDivElement>(null);
 
-  // Determine which agent is currently active
-  const activeAgent =
-    currentStep > 0 && currentStep <= steps.length
-      ? steps[currentStep - 1].agent
-      : isRunning && currentStep < steps.length
-      ? steps[currentStep].agent
-      : null;
+  const scrollToDemo = () => {
+    demoRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-
-      <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-8">
-        {/* Agents Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
-          <AgentCard agent={requester} isActive={activeAgent === "requester"} />
-          <AgentCard agent={worker} isActive={activeAgent === "worker"} />
-        </div>
-
-        {/* Task Card */}
-        <div className="mb-8">
-          <TaskCard task={task} />
-        </div>
-
-        {/* Bottom: Step Runner + Event Log */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <StepRunner
-            steps={steps}
-            currentStep={currentStep}
-            isRunning={isRunning}
-            isDone={isDone}
-            onNext={runNextStep}
-            onReset={reset}
-          />
-          <EventLogPanel events={events} />
-        </div>
-
-        {/* Done Banner */}
-        {isDone && (
-          <div className="mt-8 rounded-xl border border-green-500/30 bg-green-500/5 p-6 text-center animate-slide-in">
-            <p className="text-2xl mb-2">🎉</p>
-            <h3 className="text-lg font-bold text-green-400">
-              Hackathon MVP Complete!
-            </h3>
-            <p className="text-sm text-[var(--text-secondary)] mt-1">
-              Task created → accepted → completed → confirmed → paid with MON on Monad Testnet
-            </p>
+    <div className="min-h-screen">
+      {/* Sticky Nav */}
+      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-[var(--mon-darker)]/90 border-b border-[var(--mon-border)]">
+        <div className="max-w-5xl mx-auto px-6 h-12 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-[var(--mon-purple-glow)]">◆</span>
+            <span className="font-pixel text-[8px] text-[var(--mon-text)]">
+              AGENT MARKETPLACE
+            </span>
           </div>
-        )}
-      </main>
+          <div className="flex items-center gap-5">
+            <a
+              href="#live-demo"
+              className="text-[10px] text-[var(--mon-text-dim)] hover:text-[var(--mon-purple-glow)] transition-colors"
+            >
+              [demo]
+            </a>
+            <a
+              href="#how-it-works"
+              className="text-[10px] text-[var(--mon-text-dim)] hover:text-[var(--mon-purple-glow)] transition-colors"
+            >
+              [how]
+            </a>
+            <div className="flex items-center gap-1.5 border border-[var(--mon-border)] rounded px-2.5 py-0.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-[var(--mon-green)] animate-pulse" />
+              <span className="text-[9px] text-[var(--mon-text-dim)]">
+                monad testnet
+              </span>
+            </div>
+          </div>
+        </div>
+      </nav>
 
-      <footer className="border-t border-[var(--border)] py-4">
-        <p className="text-center text-xs text-[var(--text-secondary)]">
-          Agent Marketplace MVP • Monad Testnet (Chain ID: 10143) • Mock Mode
-        </p>
-      </footer>
+      {/* Sections */}
+      <Hero onScrollToDemo={scrollToDemo} />
+
+      <div id="how-it-works">
+        <HowItWorks />
+      </div>
+
+      <div ref={demoRef}>
+        <LiveDemo />
+      </div>
+
+      <Architecture />
+      <TechStack />
+      <Footer />
     </div>
   );
 }
