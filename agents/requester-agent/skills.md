@@ -1,33 +1,41 @@
-# Requester Agent — Skills
+# TaskFlow — Requester Agent Skills
 
 ## create_task
 
-**Description:** Create a new task with a title and MON reward.
+**Description:** Create a new task and broadcast it to listening workers.
 
-**Parameters:**
-| Name    | Type   | Description                          |
-|---------|--------|--------------------------------------|
-| title   | string | Short description of the task        |
-| reward  | string | Reward amount in MON (e.g. "0.01")   |
+**Signature:** `agent.executeSkill("create_task", title, rewardMON)`
 
-**Behavior:**
-1. Creates a task entry in the shared TaskStore with status `OPEN`.
-2. Emits `task:created` event with `{ taskId, title, reward }`.
+| Param | Type | Description |
+|-------|------|-------------|
+| `title` | `string` | Short task description (e.g. "Smart contract audit") |
+| `rewardMON` | `string` | Payment amount in MON (e.g. "0.01") |
+
+**Returns:** `Task` object (`{ id, title, reward, status, requester, ... }`)
+
+**Flow:**
+1. Creates entry in TaskStore → status `OPEN`
+2. Emits `task:created` → `{ taskId, title, reward }`
 
 ---
 
 ## confirm_completion
 
-**Description:** Confirm that a completed task is satisfactory, then send MON payment to the worker.
+**Description:** Verify the worker's output, then send MON payment on-chain.
 
-**Parameters:**
-| Name    | Type   | Description              |
-|---------|--------|--------------------------|
-| taskId  | string | The ID of the task       |
+**Signature:** `agent.executeSkill("confirm_completion", taskId)`
 
-**Behavior:**
-1. Validates task status is `COMPLETED` and caller is the requester.
-2. Updates task status to `CONFIRMED`.
-3. Sends `reward` amount of native MON to the worker's wallet via Monad Testnet.
-4. Updates task status to `PAID` with the transaction hash.
-5. Emits `task:confirmed` and `payment:sent` events.
+| Param | Type | Description |
+|-------|------|-------------|
+| `taskId` | `string` | The task to confirm |
+
+**Returns:** `PaymentResult` (`{ txHash, from, to, amount }`)
+
+**Flow:**
+1. Validates status is `COMPLETED` and caller is the original requester
+2. Updates status → `CONFIRMED`
+3. Calls `sendMON(privateKey, workerAddress, reward)` on Monad Testnet
+4. Updates status → `PAID` with tx hash
+5. Emits `task:confirmed` then `payment:sent`
+
+**Important:** This is the only skill that triggers an on-chain transaction.

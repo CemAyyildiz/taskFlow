@@ -11,7 +11,7 @@ export function createWorkerAgent(walletAddress: string): Agent {
   // ── Skill: accept_task ──────────────────────────────────────────
   agent.registerSkill(
     "accept_task",
-    "Accept an open task from the marketplace",
+    "Accept an open task to begin working on it",
     (taskId: string) => {
       const task = taskStore.accept(taskId, walletAddress);
       agent.log(`🤝 Task accepted: "${task.title}" (ID: ${task.id})`);

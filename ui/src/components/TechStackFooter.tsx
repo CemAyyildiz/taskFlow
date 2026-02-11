@@ -55,10 +55,10 @@ export function Footer() {
           <div className="flex items-center gap-2">
             <span className="text-[var(--mon-purple-glow)]">◆</span>
             <span className="font-pixel text-[8px] text-[var(--mon-text)]">
-              AGENT MARKETPLACE
+              TASKFLOW
             </span>
             <span className="text-[var(--mon-border)]">│</span>
-            <span>hackathon mvp</span>
+            <span>hackathon mvp — agent-to-agent delegation</span>
           </div>
           <div className="flex items-center gap-3">
             <span>monad testnet</span>

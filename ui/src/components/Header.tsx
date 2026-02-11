@@ -5,7 +5,7 @@ export function Header() {
         <div className="flex items-center gap-3">
           <span className="text-2xl">🏪</span>
           <div>
-            <h1 className="text-xl font-bold tracking-tight">Agent Marketplace</h1>
+            <h1 className="text-xl font-bold tracking-tight">TaskFlow</h1>
             <p className="text-xs text-[var(--text-secondary)]">
               Ultra-Simple MVP — Agent → Agent → Payment Flow
             </p>

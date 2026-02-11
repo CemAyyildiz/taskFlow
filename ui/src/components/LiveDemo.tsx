@@ -157,7 +157,7 @@ export function LiveDemo() {
               <span className="w-2.5 h-2.5 rounded-full bg-[var(--mon-yellow)]" />
               <span className="w-2.5 h-2.5 rounded-full bg-[var(--mon-green)]" />
               <span className="ml-3 text-[10px] text-[var(--mon-text-dim)]">
-                agent-marketplace — run-demo.ts
+                taskflow — run-demo.ts
               </span>
             </div>
             {!s.isRunning && !s.isDone && (
@@ -288,7 +288,7 @@ export function LiveDemo() {
                   <span className="text-[var(--mon-purple-dim)]">~</span> npx tsx scripts/run-demo.ts
                 </p>
                 <p className="text-[var(--mon-text-dim)] mb-2">
-                  ─ agent-marketplace v0.1.0 ─ monad-testnet ─ chain:10143 ─
+                  ─ taskflow v0.1.0 ─ monad-testnet ─ chain:10143 ─
                 </p>
 
                 {s.events.length === 0 && !s.isRunning && (

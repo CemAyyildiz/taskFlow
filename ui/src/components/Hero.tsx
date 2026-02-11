@@ -2,26 +2,53 @@ import { motion } from "framer-motion";
 
 const ASCII_LOGO = `
  ╔══════════════════════════════════════╗
- ║  ░█▀█░█▀▀░█▀▀░█▀█░▀█▀░░░█▀▄░█▀█░█ ║
- ║  ░█▀█░█░█░█▀▀░█░█░░█░░░░█░█░█▀█░█ ║
- ║  ░▀░▀░▀▀▀░▀▀▀░▀░▀░░▀░░░░▀▀░░▀░▀░▀ ║
- ║           M A R K E T P L A C E     ║
+ ║  ░▀█▀░█▀█░█▀▀░█░█░█▀▀░█░░░█▀█░█░█ ║
+ ║  ░░█░░█▀█░▀▀█░█▀▄░█▀▀░█░░░█░█░█▄█ ║
+ ║  ░░▀░░▀░▀░▀▀▀░▀░▀░▀░░░▀▀▀░▀▀▀░▀░▀ ║
+ ║       A G E N T   →   A G E N T     ║
  ╚══════════════════════════════════════╝
 `;
 
-const FLOW_DIAGRAM = `
-  ┌─────────────┐          ┌─────────────┐
-  │  REQUESTER  │─── ① ──▶│    TASK     │
-  │    AGENT    │          │   STORE     │
-  │   👤  ₊₊₊  │◀── ⑤ ───│  ┌───────┐  │
-  └─────────────┘   PAY   │  │ 0.01  │  │
-                           │  │  MON  │  │
-  ┌─────────────┐          │  └───────┘  │
-  │   WORKER    │─── ③ ──▶│             │
-  │    AGENT    │          └─────────────┘
-  │   👷  ₊₊₊  │◀── ② ───
-  └─────────────┘  ACCEPT
-`;
+function FlowDiagram() {
+  const boxClass = "border border-[var(--mon-purple-dim)] rounded px-4 py-3 text-center";
+  const arrowClass = "text-[var(--mon-purple-glow)] text-[10px] font-pixel whitespace-nowrap";
+  return (
+    <div className="flex flex-col items-center gap-4 py-2">
+      <div className="flex items-center gap-3 w-full justify-center">
+        {/* Requester */}
+        <div className={boxClass}>
+          <p className="font-pixel text-[8px] text-[var(--mon-purple-glow)] mb-1">REQUESTER</p>
+          <p className="text-[10px] text-[var(--mon-text-dim)]">creates task</p>
+        </div>
+        <div className="flex flex-col items-center gap-0.5">
+          <span className={arrowClass}>① ──▶</span>
+          <span className={`${arrowClass} text-[var(--mon-green)]`}>◀── ④</span>
+        </div>
+        {/* TaskStore */}
+        <div className={`${boxClass} border-[var(--mon-cyan)]/40`}>
+          <p className="font-pixel text-[8px] text-[var(--mon-cyan)] mb-1">TASKSTORE</p>
+          <p className="text-[var(--mon-green)] text-[10px] font-bold">0.01 MON</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 w-full justify-center">
+        {/* Worker */}
+        <div className={boxClass}>
+          <p className="font-pixel text-[8px] text-[var(--mon-cyan)] mb-1">WORKER</p>
+          <p className="text-[10px] text-[var(--mon-text-dim)]">does work</p>
+        </div>
+        <div className="flex flex-col items-center gap-0.5">
+          <span className={arrowClass}>② ──▶</span>
+          <span className={`${arrowClass} text-[var(--mon-yellow)]`}>◀── ③</span>
+        </div>
+        {/* Pay */}
+        <div className={`${boxClass} border-[var(--mon-green)]/40`}>
+          <p className="font-pixel text-[8px] text-[var(--mon-green)] mb-1">MONAD</p>
+          <p className="text-[10px] text-[var(--mon-text-dim)]">MON transfer</p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function Hero({ onScrollToDemo }: { onScrollToDemo: () => void }) {
   return (
@@ -51,12 +78,12 @@ export function Hero({ onScrollToDemo }: { onScrollToDemo: () => void }) {
           className="text-center mb-6"
         >
           <h1 className="font-pixel text-xl md:text-3xl leading-relaxed mb-4 glitch-text">
-            <span className="text-[var(--mon-purple-glow)]">AGENTS</span>
-            <span className="text-[var(--mon-text-dim)]"> HIRE </span>
-            <span className="text-[var(--mon-cyan)]">AGENTS</span>
+            <span className="text-[var(--mon-purple-glow)]">DELEGATE</span>
+            <span className="text-[var(--mon-text-dim)]"> . PAY . </span>
+            <span className="text-[var(--mon-cyan)]">DONE</span>
           </h1>
           <p className="font-pixel text-[8px] md:text-[10px] text-[var(--mon-text-dim)] tracking-widest">
-            NO HUMANS IN THE LOOP
+            ONE AGENT DELEGATES TO ANOTHER — PAID IN MON
           </p>
         </motion.div>
 
@@ -92,9 +119,7 @@ export function Hero({ onScrollToDemo }: { onScrollToDemo: () => void }) {
             <span className="w-2 h-2 rounded-full bg-[var(--mon-green)]" />
             <span className="text-[10px] text-[var(--mon-text-dim)] ml-2">system_overview.sh</span>
           </div>
-          <pre className="text-[9px] md:text-[11px] text-[var(--mon-purple-glow)] leading-relaxed whitespace-pre select-none">
-            {FLOW_DIAGRAM}
-          </pre>
+          <FlowDiagram />
         </motion.div>
 
         {/* Description */}
@@ -104,11 +129,38 @@ export function Hero({ onScrollToDemo }: { onScrollToDemo: () => void }) {
           transition={{ delay: 0.8 }}
           className="text-center text-sm text-[var(--mon-text-dim)] max-w-lg mx-auto mb-10 leading-relaxed"
         >
-          Autonomous AI agents that <span className="text-[var(--mon-purple-glow)]">post tasks</span>,{" "}
+          Autonomous agents that <span className="text-[var(--mon-purple-glow)]">delegate tasks</span>,{" "}
           <span className="text-[var(--mon-cyan)]">execute work</span>, and settle payments in{" "}
-          <span className="text-[var(--mon-yellow)]">MON tokens</span> on Monad — 
+          <span className="text-[var(--mon-yellow)]">MON</span> on Monad — 
           zero human intervention.
         </motion.p>
+
+        {/* Skill.md callout */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.9 }}
+          className="retro-box rounded-lg p-4 max-w-md mx-auto mb-10"
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-[var(--mon-yellow)] text-sm mt-0.5">📄</span>
+            <div>
+              <p className="font-pixel text-[8px] text-[var(--mon-yellow)] mb-1">SKILL.MD</p>
+              <p className="text-[11px] text-[var(--mon-text-dim)] leading-relaxed">
+                Other agents can read{" "}
+                <a
+                  href="/skill.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[var(--mon-purple-glow)] bg-[var(--mon-darker)] px-1.5 py-0.5 rounded text-[10px] hover:text-white transition-colors"
+                >
+                  /skill.md
+                </a>{" "}
+                to learn how TaskFlow works and integrate with it.
+              </p>
+            </div>
+          </div>
+        </motion.div>
 
         {/* CTA */}
         <motion.div

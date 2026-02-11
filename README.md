@@ -1,6 +1,6 @@
-# 🏪 Agent Marketplace — Ultra-Simple MVP
+# ⚡ TaskFlow — Agent-to-Agent Task Delegation on Monad
 
-A minimal hackathon prototype where **two autonomous agents** collaborate through a task lifecycle and settle payments with native **MON tokens** on **Monad Testnet**.
+One agent delegates a task to another agent and pays in native **MON** on **Monad Testnet**. No marketplace, no middleman — just two autonomous agents and an on-chain payment.
 
 ```
 Requester Agent ──creates task──▶ TaskStore
@@ -19,8 +19,6 @@ npm install
 
 ### 2. Configure wallets
 
-Copy the example env file and add your **Monad Testnet** private keys:
-
 ```bash
 cp .env.example .env
 ```
@@ -29,11 +27,9 @@ Edit `.env`:
 
 ```env
 MONAD_RPC_URL=https://testnet-rpc.monad.xyz
-REQUESTER_PRIVATE_KEY=0xabc...   # Requester wallet (needs MON for payments + gas)
-WORKER_PRIVATE_KEY=0xdef...      # Worker wallet
+REQUESTER_PRIVATE_KEY=0xabc...   # Needs MON for payments + gas
+WORKER_PRIVATE_KEY=0xdef...      # Receives MON
 ```
-
-> 💧 **Faucet:** Get testnet MON at [faucet.monad.xyz](https://faucet.monad.xyz)
 
 ### 3. Run the demo
 
@@ -41,24 +37,23 @@ WORKER_PRIVATE_KEY=0xdef...      # Worker wallet
 npm run demo
 ```
 
-This executes the full lifecycle in a single command:
+Full lifecycle in one command:
 
 1. **Requester** creates a task with a MON reward
 2. **Worker** accepts the task
 3. **Worker** marks the task as completed
-4. **Requester** confirms completion
-5. **Requester** sends MON to the worker on Monad Testnet
+4. **Requester** confirms & sends MON on Monad Testnet
 
 ## Architecture
 
 ### Agents
 
-Each agent is an `EventEmitter`-based entity that registers **skills** (named functions) and communicates via events.
+Each agent is an `EventEmitter`-based entity with registered **skills**.
 
-| Agent            | Skills                              |
-|------------------|-------------------------------------|
-| RequesterAgent   | `create_task`, `confirm_completion` |
-| WorkerAgent      | `accept_task`, `complete_task`      |
+| Agent | Skills |
+|-------|--------|
+| Requester | `create_task`, `confirm_completion` |
+| Worker | `accept_task`, `complete_task` |
 
 ### Task Lifecycle
 
@@ -68,39 +63,45 @@ OPEN → ACCEPTED → COMPLETED → CONFIRMED → PAID
 
 ### Tech Stack
 
-| Component        | Choice                                |
-|------------------|---------------------------------------|
-| Language         | TypeScript                            |
-| Runtime          | Node.js                               |
-| Agent Framework  | Lightweight custom (EventEmitter)     |
-| Blockchain       | Monad Testnet (Chain ID: 10143)       |
-| Token            | Native MON                            |
-| Web3 Library     | viem                                  |
-| Data Storage     | In-memory (Map)                       |
+| Component | Choice |
+|-----------|--------|
+| Language | TypeScript |
+| Runtime | Node.js |
+| Agent | Custom (EventEmitter + skill registry) |
+| Blockchain | Monad Testnet (Chain ID: 10143) |
+| Token | Native MON |
+| Web3 | viem |
+| Data | In-memory (Map) |
 
 ## Project Structure
 
 ```
-agent-marketplace/
+taskflow/
 ├─ agents/
 │  ├─ requester-agent/
-│  │  ├─ agent.ts          # Requester skills & logic
-│  │  └─ skills.md         # Skill documentation
+│  │  ├─ agent.ts           # Requester skills & logic
+│  │  └─ skills.md          # Skill documentation
 │  └─ worker-agent/
-│     ├─ agent.ts          # Worker skills & logic
-│     └─ skills.md         # Skill documentation
+│     ├─ agent.ts           # Worker skills & logic
+│     └─ skills.md          # Skill documentation
 ├─ shared/
-│  ├─ agent.ts             # Base Agent class (EventEmitter + skills)
-│  ├─ types.ts             # Task, TaskStatus, PaymentResult
-│  ├─ taskStore.ts         # In-memory task store (singleton)
-│  └─ monad.ts             # Monad Testnet transfer helpers (viem)
+│  ├─ agent.ts              # Base Agent class
+│  ├─ types.ts              # Task, TaskStatus, PaymentResult
+│  ├─ taskStore.ts          # In-memory task store
+│  └─ monad.ts              # Monad transfer helpers (viem)
 ├─ scripts/
-│  └─ run-demo.ts          # End-to-end demo script
+│  └─ run-demo.ts           # End-to-end demo script
+├─ ui/
+│  └─ public/skill.md       # Skill definition (served at /skill.md)
 ├─ .env.example
 ├─ package.json
 ├─ tsconfig.json
 └─ README.md
 ```
+
+## Skill Definition
+
+See [`/skill.md`](ui/public/skill.md) for the full agent skill specification. Served at `yourdomain.com/skill.md` — other agents read this to learn how to integrate.
 
 ## License
 

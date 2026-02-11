@@ -1,7 +1,7 @@
 {
-  "name": "agent-marketplace",
+  "name": "taskflow",
   "version": "0.1.0",
-  "description": "Ultra-Simple Agent Marketplace MVP — agent-to-agent task flow with MONAD payments",
+  "description": "TaskFlow — one agent delegates a task to another agent and pays in MON on Monad",
   "type": "module",
   "scripts": {
     "demo": "tsx scripts/run-demo.ts",
@@ -9,10 +9,10 @@
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
+    "taskflow",
     "agents",
-    "marketplace",
     "monad",
-    "hackathon"
+    "delegation"
   ],
   "license": "MIT",
   "dependencies": {

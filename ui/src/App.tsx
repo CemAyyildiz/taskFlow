@@ -17,12 +17,16 @@ function App() {
       {/* Sticky Nav */}
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-[var(--mon-darker)]/90 border-b border-[var(--mon-border)]">
         <div className="max-w-5xl mx-auto px-6 h-12 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <a
+            href="#"
+            onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          >
             <span className="text-[var(--mon-purple-glow)]">◆</span>
             <span className="font-pixel text-[8px] text-[var(--mon-text)]">
-              AGENT MARKETPLACE
+              TASKFLOW
             </span>
-          </div>
+          </a>
           <div className="flex items-center gap-5">
             <a
               href="#live-demo"

@@ -20,7 +20,7 @@ function requireEnv(key: string): string {
 
 // ─── Main Demo ──────────────────────────────────────────────────────
 async function main() {
-  console.log("🏪 Agent Marketplace — MVP Demo");
+  console.log("⚡ TaskFlow — Demo");
   console.log("   Network: Monad Testnet (Chain ID: 10143)");
   separator();
 
