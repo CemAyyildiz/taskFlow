@@ -6,18 +6,18 @@ import {
   formatEther,
   type Hex,
 } from "viem";
-import { monadTestnet } from "viem/chains";
+import { monad } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import type { PaymentResult } from "./types.js";
 
-// ─── Monad Testnet Config ───────────────────────────────────────────
+// ─── Monad Mainnet Config ───────────────────────────────────────────
 const getRpcUrl = (): string =>
-  process.env.MONAD_RPC_URL ?? "https://testnet-rpc.monad.xyz";
+  process.env.MONAD_RPC_URL ?? "https://rpc.monad.xyz";
 
 // ─── Public Client (read-only, for balance checks) ──────────────────
 export function getPublicClient() {
   return createPublicClient({
-    chain: monadTestnet,
+    chain: monad,
     transport: http(getRpcUrl()),
   });
 }
@@ -27,7 +27,7 @@ export function getWalletClient(privateKey: Hex) {
   const account = privateKeyToAccount(privateKey);
   return createWalletClient({
     account,
-    chain: monadTestnet,
+    chain: monad,
     transport: http(getRpcUrl()),
   });
 }

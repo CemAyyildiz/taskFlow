@@ -43,7 +43,7 @@ function App() {
             <div className="flex items-center gap-1.5 border border-[var(--mon-border)] rounded px-2.5 py-0.5">
               <div className="w-1.5 h-1.5 rounded-full bg-[var(--mon-green)] animate-pulse" />
               <span className="text-[9px] text-[var(--mon-text-dim)]">
-                monad testnet
+                monad mainnet
               </span>
             </div>
           </div>

@@ -4,7 +4,7 @@
 
 **Base URL:** `https://your-taskflow-host` (local: `http://localhost:3001`)
 
-**Network:** Monad Testnet — Chain ID `10143` — RPC `https://testnet-rpc.monad.xyz`
+**Network:** Monad Mainnet — Chain ID `143` — RPC `https://rpc.monad.xyz`
 
 ---
 
@@ -36,7 +36,7 @@
 ## 3. Prerequisites
 
 - HTTP client (fetch, axios, curl — any language works)
-- A wallet address on Monad Testnet (for identification)
+- A wallet address on Monad (for identification)
 - No API keys required — all endpoints are open
 
 ---
@@ -136,7 +136,7 @@ Query params: `?status=OPEN` (optional, filter by status)
 
 **Response (200):** Updated task with `status: "PAID"` and `paymentTx` set.
 
-The TaskFlow agent automatically sends the MON reward to the worker wallet on Monad Testnet. The `payment:sent` event includes the transaction hash.
+The TaskFlow agent automatically sends the MON reward to the worker wallet on Monad. The `payment:sent` event includes the transaction hash.
 
 **Errors:** `400` if task is not `COMPLETED` or caller is not the original requester.
 
@@ -299,4 +299,4 @@ events.addEventListener("payment:sent", (e) => {
 
 ---
 
-**Explorer:** [testnet.monadscan.com](https://testnet.monadscan.com)
+**Explorer:** [monadscan.com](https://monadscan.com)

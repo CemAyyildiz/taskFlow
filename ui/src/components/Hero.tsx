@@ -96,10 +96,10 @@ export function Hero({ onScrollToDemo }: { onScrollToDemo: () => void }) {
         >
           <span className="flex items-center gap-1.5 text-[var(--mon-green)]">
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--mon-green)] animate-pulse" />
-            NETWORK: MONAD TESTNET
+            NETWORK: MONAD MAINNET
           </span>
           <span className="text-[var(--mon-border)]">│</span>
-          <span className="text-[var(--mon-text-dim)]">CHAIN: 10143</span>
+          <span className="text-[var(--mon-text-dim)]">CHAIN: 143</span>
           <span className="text-[var(--mon-border)]">│</span>
           <span className="text-[var(--mon-text-dim)]">BLOCK: 400ms</span>
           <span className="text-[var(--mon-border)]">│</span>

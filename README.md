@@ -1,6 +1,6 @@
 # ⚡ TaskFlow — Agent-to-Agent Task Delegation on Monad
 
-One agent delegates a task to another agent and pays in native **MON** on **Monad Testnet**. No marketplace, no middleman — just a persistent autonomous agent that orchestrates the full lifecycle: **delegate → accept → complete → pay**.
+One autonomous agent delegates a task to another agent and pays in native **MON** on **Monad**. No middleman — a persistent agent server orchestrates the full lifecycle: **delegate → accept → complete → pay**.
 
 ```
 External Agent ──POST /tasks────────▶ TaskFlow Agent ──broadcasts──▶ SSE
@@ -17,6 +17,7 @@ Requester      ──POST /confirm──────▶ TaskFlow Agent ──sen
 
 ```bash
 npm install
+cd ui && npm install
 ```
 
 ### 2. Configure
@@ -25,12 +26,13 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `.env` — single private key:
 
 ```env
-MONAD_RPC_URL=https://testnet-rpc.monad.xyz
-AGENT_PRIVATE_KEY=0x...     # TaskFlow agent wallet (sends MON payments)
+PRIVATE_KEY=0xYourPrivateKeyHere
 ```
+
+The agent derives its wallet address from this key and uses it to send MON payments.
 
 ### 3. Start the agent
 
@@ -44,7 +46,15 @@ The TaskFlow agent starts on `http://localhost:3001` with:
 - Autonomous monitor loop (stale task detection, balance reports)
 - Skill definition at `/skill.md`
 
-### 4. Test the lifecycle
+### 4. Start the UI
+
+```bash
+cd ui && npm run dev
+```
+
+Opens the landing page with a **live demo** that connects to the real agent — press RUN to execute a full task lifecycle with real API calls and real MON transfers.
+
+### 5. Test via curl
 
 ```bash
 # Create task
@@ -53,28 +63,20 @@ curl -X POST http://localhost:3001/tasks \
   -d '{"title":"Audit contract","reward":"0.01","requester":"0xRequester"}'
 
 # Accept → Complete → Confirm (triggers MON payment)
-curl -X POST http://localhost:3001/tasks/{id}/accept  -d '{"worker":"0xWorker"}'
-curl -X POST http://localhost:3001/tasks/{id}/complete -d '{"worker":"0xWorker"}'
-curl -X POST http://localhost:3001/tasks/{id}/confirm  -d '{"requester":"0xRequester"}'
+curl -X POST http://localhost:3001/tasks/{id}/accept  -H "Content-Type: application/json" -d '{"worker":"0xWorker"}'
+curl -X POST http://localhost:3001/tasks/{id}/complete -H "Content-Type: application/json" -d '{"worker":"0xWorker"}'
+curl -X POST http://localhost:3001/tasks/{id}/confirm  -H "Content-Type: application/json" -d '{"requester":"0xRequester"}'
 ```
-
-### 5. Run the demo script (optional)
-
-```bash
-npm run demo
-```
-
-Runs a scripted end-to-end flow with requester + worker agents.
 
 ---
 
 ## The Agent
 
-The TaskFlow Agent (`agents/taskflow-agent/index.ts`) is a **persistent autonomous process** — not a one-shot script. It:
+The TaskFlow Agent (`agents/taskflow-agent/index.ts`) is a **persistent autonomous process**:
 
 - **Orchestrates** the entire task lifecycle via REST API
 - **Broadcasts** every state change in real-time via SSE
-- **Pays** workers automatically in MON on Monad Testnet when a requester confirms
+- **Pays** workers automatically in MON on Monad when a requester confirms
 - **Monitors** for stale tasks, stuck completions, and wallet balance every 10 seconds
 - **Serves** its own skill definition at `/skill.md` for other agents to read
 
@@ -108,7 +110,7 @@ OPEN → ACCEPTED → COMPLETED → CONFIRMED → PAID
 | Runtime | Node.js + tsx |
 | Agent Server | Express + CORS |
 | Real-time | Server-Sent Events |
-| Blockchain | Monad Testnet (Chain ID: 10143) |
+| Blockchain | Monad Mainnet (Chain ID: 143) |
 | Token | Native MON |
 | Web3 | viem |
 | Data | In-memory (Map) |
@@ -121,24 +123,20 @@ OPEN → ACCEPTED → COMPLETED → CONFIRMED → PAID
 ```
 taskflow/
 ├─ agents/
-│  ├─ taskflow-agent/
-│  │  └─ index.ts           # The real agent — Express + SSE + monitor
-│  ├─ requester-agent/
-│  │  └─ agent.ts           # Requester factory (for demo)
-│  └─ worker-agent/
-│     └─ agent.ts           # Worker factory (for demo)
+│  └─ taskflow-agent/
+│     └─ index.ts           # The real agent — Express + SSE + monitor
 ├─ shared/
 │  ├─ agent.ts              # Base Agent class (EventEmitter)
 │  ├─ types.ts              # Task, TaskStatus, PaymentResult
 │  ├─ taskStore.ts          # In-memory task store with FSM
 │  └─ monad.ts              # Monad transfer helpers (viem)
-├─ scripts/
-│  └─ run-demo.ts           # End-to-end demo script
 ├─ ui/
 │  ├─ src/                  # React landing page (retro CRT design)
+│  │  ├─ api.ts             # Real API client for agent server
+│  │  └─ components/        # Hero, LiveDemo, HowItWorks, Architecture
 │  └─ public/
 │     └─ skill.md           # Skill definition (served at /skill.md)
-├─ .env.example
+├─ .env.example             # Single PRIVATE_KEY
 ├─ package.json
 ├─ tsconfig.json
 └─ README.md

@@ -61,9 +61,9 @@ export function Footer() {
             <span>hackathon mvp — agent-to-agent delegation</span>
           </div>
           <div className="flex items-center gap-3">
-            <span>monad testnet</span>
+            <span>monad mainnet</span>
             <span className="text-[var(--mon-border)]">│</span>
-            <span>chain:10143</span>
+            <span>chain:143</span>
             <span className="text-[var(--mon-border)]">│</span>
             <a
               href="https://github.com"

@@ -7,8 +7,8 @@ const layers = [
     ascii: "▓▓▓",
     color: "var(--mon-purple-glow)",
     description:
-      "Requester & Worker agents — autonomous EventEmitter-based entities with registered skill functions.",
-    items: ["RequesterAgent", "WorkerAgent", "Skill Registry", "Event Bus"],
+      "Persistent autonomous TaskFlow agent — Express server with REST API, SSE broadcast, and autonomous monitor loop.",
+    items: ["TaskFlow Agent", "Express Server", "Monitor Loop", "SSE Broadcast"],
   },
   {
     tag: "02",
@@ -16,8 +16,8 @@ const layers = [
     ascii: ">>>",
     color: "var(--mon-cyan)",
     description:
-      "Agents communicate via typed events — no REST, no WebSocket, just in-process pub/sub.",
-    items: ["task:created", "task:accepted", "task:completed", "payment:sent"],
+      "REST API for task CRUD + Server-Sent Events for real-time updates. Any HTTP client can integrate via skill.md.",
+    items: ["REST API", "SSE Events", "skill.md", "CORS"],
   },
   {
     tag: "03",
@@ -25,8 +25,8 @@ const layers = [
     ascii: "[=]",
     color: "var(--mon-yellow)",
     description:
-      "In-memory TaskStore backed by a Map — no DB, no persistence. MVP-grade simplicity.",
-    items: ["TaskStore (Map)", "Task type", "Status FSM", "Singleton"],
+      "In-memory TaskStore with strict status FSM. Open → Accepted → Completed → Confirmed → Paid.",
+    items: ["TaskStore", "Status FSM", "Task Model", "Singleton"],
   },
   {
     tag: "04",
@@ -34,8 +34,8 @@ const layers = [
     ascii: "◆◆◆",
     color: "var(--mon-green)",
     description:
-      "Native MON transfers via viem on Monad Testnet. EVM-compatible, 400ms blocks, near-zero fees.",
-    items: ["Monad Testnet", "viem", "Native MON", "21k gas"],
+      "Native MON transfers via viem on Monad Mainnet. EVM-compatible, 400ms blocks, near-zero gas fees.",
+    items: ["Monad Mainnet", "viem", "Native MON", "sendMON()"],
   },
 ];
 
@@ -68,13 +68,13 @@ export function Architecture() {
           className="text-[10px] md:text-xs text-[var(--mon-text-dim)] mb-10 leading-relaxed select-none hidden md:block"
         >
 {`  ┌─────────────────────────────────────────────┐
-  │  ▓▓ RequesterAgent    ░░ WorkerAgent        │  AGENT LAYER
+  │  ⚡ TaskFlow Agent (Express + SSE)          │  AGENT LAYER
   ├─────────────────────────────────────────────┤
-  │  EventEmitter  →  task:* / payment:*        │  COMMUNICATION
+  │  REST API  →  /tasks, /events, /skill.md    │  COMMUNICATION
   ├─────────────────────────────────────────────┤
   │  TaskStore (Map)  │  Status FSM             │  DATA LAYER
   ├─────────────────────────────────────────────┤
-  │  viem  →  Monad Testnet  │  sendMON()       │  BLOCKCHAIN
+  │  viem  →  Monad Mainnet  │  sendMON()       │  BLOCKCHAIN
   └─────────────────────────────────────────────┘`}
         </motion.pre>
 

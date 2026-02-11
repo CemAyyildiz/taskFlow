@@ -12,7 +12,7 @@ import { sendMON, getBalance, addressFromKey, getPublicClient } from "../../shar
 
 // ─── Config ─────────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT ?? 3001);
-const AGENT_KEY = process.env.AGENT_PRIVATE_KEY as Hex | undefined;
+const AGENT_KEY = process.env.PRIVATE_KEY as Hex | undefined;
 const AGENT_ADDR = AGENT_KEY ? addressFromKey(AGENT_KEY) : null;
 const MONITOR_INTERVAL = 10_000; // 10s
 
@@ -232,8 +232,8 @@ app.listen(PORT, () => {
   console.log(`  Events:     http://localhost:${PORT}/events`);
   console.log(`  Skill file: http://localhost:${PORT}/skill.md`);
   console.log(`  Health:     http://localhost:${PORT}/health`);
-  console.log(`  Wallet:     ${AGENT_ADDR ?? "not configured (set AGENT_PRIVATE_KEY)"}`);
-  console.log(`  Network:    Monad Testnet (Chain ID: 10143)`);
+  console.log(`  Wallet:     ${AGENT_ADDR ?? "not configured (set PRIVATE_KEY in .env)"}`);
+  console.log(`  Network:    Monad Mainnet (Chain ID: 143)`);
   console.log("  ─────────────────────────────────────");
   console.log("");
 
