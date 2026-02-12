@@ -1,201 +1,178 @@
 import { useState, useEffect, useRef } from "react";
+import { getHealth, connectSSE } from "../api";
 
-const AGENT_API = "http://localhost:3002";
-
-interface AgentStats {
-  tasksMonitored: number;
-  tasksVerified: number;
-  resultsValidated: number;
-  payoutsConfirmed: number;
-  totalValueProcessed: number;
-  uptimeSeconds: number;
+interface PlatformHealth {
+  status: string;
+  platform: string;
+  contract: string;
+  escrowBalance: string;
+  chain: string;
+  tasks: {
+    total: number;
+    open: number;
+    accepted: number;
+    submitted: number;
+    done: number;
+  };
 }
 
 interface Activity {
   id: string;
-  timestamp: string;
   type: string;
   message: string;
+  timestamp: string;
   txHash?: string;
 }
 
 export function Agent() {
-  const [online, setOnline] = useState(false);
-  const [stats, setStats] = useState<AgentStats | null>(null);
-  const [address, setAddress] = useState("");
+  const [health, setHealth] = useState<PlatformHealth | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [uptime, setUptime] = useState(0);
   const logRef = useRef<HTMLDivElement>(null);
+  const startTime = useRef(Date.now());
 
+  // Scroll log to bottom
   useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = 0;
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [activities]);
 
-  // Fetch agent
+  // Health polling
   useEffect(() => {
     const check = async () => {
       try {
-        const res = await fetch(AGENT_API);
-        if (res.ok) {
-          const data = await res.json();
-          setOnline(true);
-          setStats(data.stats);
-          setAddress(data.address);
-        } else {
-          setOnline(false);
-        }
+        const h = await getHealth();
+        setHealth(h);
       } catch {
-        setOnline(false);
+        setHealth(null);
       }
     };
     check();
-    const iv = setInterval(check, 5000);
+    const iv = setInterval(check, 5_000);
     return () => clearInterval(iv);
   }, []);
 
-  // Fetch activities
+  // Uptime counter
   useEffect(() => {
-    fetch(`${AGENT_API}/activity`)
-      .then((r) => r.json())
-      .then(setActivities)
-      .catch(() => {});
+    const iv = setInterval(() => {
+      setUptime(Math.floor((Date.now() - startTime.current) / 1000));
+    }, 1000);
+    return () => clearInterval(iv);
   }, []);
 
-  // SSE
+  // SSE for real-time activities
   useEffect(() => {
-    const es = new EventSource(`${AGENT_API}/events`);
-    
-    es.addEventListener("activity", (e) => {
-      const act = JSON.parse(e.data);
-      setActivities((prev) => [act, ...prev.slice(0, 19)]);
+    return connectSSE((event, data) => {
+      const activity: Activity = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        type: event,
+        message: formatEvent(event, data),
+        timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
+        txHash: data?.escrowTx || data?.acceptTx || data?.submitTx || data?.payoutTx,
+      };
+      setActivities((prev) => [...prev.slice(-20), activity]);
     });
-    
-    es.addEventListener("stats", (e) => {
-      setStats(JSON.parse(e.data));
-    });
-    
-    es.onerror = () => setOnline(false);
-    return () => es.close();
   }, []);
+
+  const online = health?.status === "ok";
 
   const formatUptime = (s: number) => {
-    if (s < 60) return `${s}s`;
-    if (s < 3600) return `${Math.floor(s / 60)}m`;
-    return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
   };
 
   return (
     <section id="agent" className="py-20 px-6 border-t-2 border-[var(--c-white)]">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-3xl font-bold mb-2">TASKFLOW AGENT</h2>
-            <p className="text-dim text-sm">
-              Autonomous monitor • On-chain verifier • Result validator
-            </p>
-          </div>
-          <div className={online ? "status-online" : "status-offline"}>
+        <div className="flex items-center gap-4 mb-8">
+          <h2 className="text-3xl font-bold">PLATFORM</h2>
+          <span className={online ? "status-online" : "status-offline"}>
             {online ? "ONLINE" : "OFFLINE"}
-          </div>
+          </span>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left - Info */}
-          <div className="space-y-6">
-            {/* Address */}
-            <div className="brutal-card p-6">
-              <p className="text-xs text-dim mb-2">AGENT ADDRESS</p>
-              {online ? (
-                <p className="text-xs font-mono text-accent break-all">
-                  {address}
-                </p>
-              ) : (
-                <p className="text-xs text-dim">—</p>
-              )}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left - Stats */}
+          <div className="brutal-card p-6 space-y-4">
+            <div className="flex items-center justify-between text-xs border-b border-[var(--c-gray-light)] pb-3">
+              <span className="text-dim">STATUS</span>
+              <span className={online ? "text-success" : "text-error"}>
+                {online ? "● CONNECTED" : "○ DISCONNECTED"}
+              </span>
             </div>
 
-            {/* Stats */}
-            <div className="brutal-card p-6">
-              <p className="text-xs text-dim mb-4">STATISTICS</p>
-              <div className="space-y-3">
-                <StatRow label="UPTIME" value={stats ? formatUptime(stats.uptimeSeconds) : "—"} />
-                <StatRow label="MONITORED" value={stats?.tasksMonitored ?? "—"} />
-                <StatRow label="VERIFIED" value={stats?.tasksVerified ?? "—"} accent />
-                <StatRow label="VALIDATED" value={stats?.resultsValidated ?? "—"} />
-                <StatRow label="MON PROCESSED" value={stats ? stats.totalValueProcessed.toFixed(4) : "—"} accent />
+            <StatRow label="UPTIME" value={formatUptime(uptime)} />
+            <StatRow label="CHAIN" value={health?.chain || "—"} />
+            <StatRow 
+              label="ESCROW BALANCE" 
+              value={health ? `${parseFloat(health.escrowBalance).toFixed(4)} MON` : "—"} 
+              accent 
+            />
+            
+            <div className="border-t border-[var(--c-gray-light)] pt-3 mt-3">
+              <p className="text-xs text-dim mb-2">TASK STATS</p>
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <StatBox label="OPEN" value={health?.tasks.open ?? 0} />
+                <StatBox label="ACTIVE" value={health?.tasks.accepted ?? 0} />
+                <StatBox label="PENDING" value={health?.tasks.submitted ?? 0} />
+                <StatBox label="DONE" value={health?.tasks.done ?? 0} />
               </div>
             </div>
 
-            {/* What it does */}
-            <div className="brutal-card p-6">
-              <p className="text-xs text-dim mb-4">CAPABILITIES</p>
-              <ul className="space-y-2 text-xs">
-                <li className="flex items-start gap-2">
-                  <span className="text-accent">▸</span>
-                  <span>Monitors new tasks in real-time</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-accent">▸</span>
-                  <span>Verifies escrow deposits on-chain</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-accent">▸</span>
-                  <span>Validates submitted results</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-accent">▸</span>
-                  <span>Confirms payout transactions</span>
-                </li>
-              </ul>
-            </div>
+            {health && (
+              <div className="border-t border-[var(--c-gray-light)] pt-3 mt-3 text-xs">
+                <p className="text-dim mb-1">CONTRACT</p>
+                <a
+                  href={`https://monadscan.com/address/${health.contract}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent hover:underline break-all"
+                >
+                  {health.contract}
+                </a>
+              </div>
+            )}
           </div>
 
-          {/* Right - Activity Feed (2 cols) */}
-          <div className="lg:col-span-2">
-            <div className="terminal-box h-full">
-              <div className="terminal-header">
-                <div className="terminal-dot bg-[var(--c-error)]" />
-                <div className="terminal-dot bg-[var(--c-accent)]" />
-                <div className="terminal-dot bg-[var(--c-success)]" />
-                <span className="text-xs text-dim ml-2">agent.log</span>
-              </div>
-              
-              <div ref={logRef} className="h-[500px] overflow-y-auto p-4 space-y-1">
-                {!online ? (
-                  <p className="text-dim">
-                    $ agent offline<span className="cursor" />
-                  </p>
-                ) : activities.length === 0 ? (
-                  <p className="text-dim">
-                    $ waiting for activity<span className="cursor" />
-                  </p>
-                ) : (
-                  activities.map((act) => (
-                    <div key={act.id} className="flex items-start gap-2 text-xs">
-                      <span className="text-dim shrink-0">
-                        [{act.timestamp.slice(11, 19)}]
-                      </span>
-                      <span className={
-                        act.type === "payout_confirmed" ? "text-success" :
-                        act.type === "task_verified" ? "text-accent" :
-                        "text-[var(--c-white)]"
-                      }>
-                        {act.message.replace(/[^\x00-\x7F]/g, "")}
-                      </span>
-                      {act.txHash && (
-                        <a
-                          href={`https://monadscan.com/tx/${act.txHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-accent hover:underline shrink-0"
-                        >
-                          [TX]
-                        </a>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
+          {/* Right - Activity Log */}
+          <div className="terminal-box">
+            <div className="terminal-header">
+              <div className="terminal-dot bg-[var(--c-error)]" />
+              <div className="terminal-dot bg-[var(--c-accent)]" />
+              <div className="terminal-dot bg-[var(--c-success)]" />
+              <span className="text-xs text-dim ml-2">activity.log</span>
+              <span className="text-xs text-dim ml-auto">{activities.length} events</span>
+            </div>
+
+            <div ref={logRef} className="h-80 overflow-y-auto p-4 space-y-1 text-xs">
+              {activities.length === 0 ? (
+                <p className="text-dim">$ waiting for events<span className="cursor" /></p>
+              ) : (
+                activities.map((a) => (
+                  <div key={a.id} className="flex gap-2">
+                    <span className="text-dim shrink-0">[{a.timestamp}]</span>
+                    <span className={
+                      a.type.includes("created") ? "text-accent" :
+                      a.type.includes("updated") ? "text-success" :
+                      "text-[var(--c-white)]"
+                    }>
+                      {a.message}
+                    </span>
+                    {a.txHash && (
+                      <a
+                        href={`https://monadscan.com/tx/${a.txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-dim hover:text-accent shrink-0"
+                      >
+                        [TX]
+                      </a>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -204,13 +181,30 @@ export function Agent() {
   );
 }
 
-function StatRow({ label, value, accent }: { label: string; value: string | number; accent?: boolean }) {
+function StatRow({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="flex justify-between items-center text-xs">
+    <div className="flex items-center justify-between text-xs">
       <span className="text-dim">{label}</span>
-      <span className={accent ? "text-accent font-bold" : "text-[var(--c-white)]"}>
-        {value}
-      </span>
+      <span className={accent ? "text-accent font-bold" : ""}>{value}</span>
     </div>
   );
+}
+
+function StatBox({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="brutal-card p-2">
+      <p className="text-lg font-bold">{value}</p>
+      <p className="text-[10px] text-dim">{label}</p>
+    </div>
+  );
+}
+
+function formatEvent(event: string, data: any): string {
+  if (event === "task:created") {
+    return `NEW: "${data.title}" (${data.reward} MON)`;
+  }
+  if (event === "task:updated") {
+    return `UPDATE: ${data.id} → ${data.status}`;
+  }
+  return `${event}: ${JSON.stringify(data).slice(0, 50)}`;
 }
