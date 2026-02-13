@@ -122,16 +122,13 @@ All state transitions are recorded **on-chain** via the TaskFlow smart contract.
 ```
 taskFlow/
 ├── agents/
-│   └── taskflow-agent/     # Platform server (port 3001)
+│   └── taskflow-agent/     # Platform server + Hybrid agent
+│       ├── index.ts        # Platform API (port 3001)
+│       └── agent.ts        # Hybrid agent (port 3002)
 ├── contracts/
 │   └── TaskFlowEscrow.sol  # Escrow smart contract
-├── shared/
-│   ├── types.ts            # Shared TypeScript types
-│   └── TaskFlowEscrow.abi.json
 ├── scripts/
-│   ├── deploy.cjs          # Contract deployment
-│   ├── test-api.mjs        # API test script
-│   └── test-onchain.mjs    # On-chain test script
+│   └── deploy.cjs          # Contract deployment
 ├── ui/                     # React + Vite frontend
 │   ├── src/
 │   │   ├── components/     # UI components

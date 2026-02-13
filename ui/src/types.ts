@@ -19,6 +19,8 @@ export interface Task {
   worker: string | null;
   escrowTx: string;
   escrowVerified: boolean;
+  acceptTx?: string;
+  submitTx?: string;
   payoutTx: string | null;
   result: string | null;
   createdAt: number;
