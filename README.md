@@ -59,6 +59,20 @@ cd ui && npm run dev
 
 UI opens at `http://localhost:5173`
 
+### 5. (Optional) Start Hybrid Agent
+
+The hybrid agent autonomously monitors the platform and completes tasks using LLM:
+
+```bash
+npm run agent
+```
+
+Agent dashboard: `http://localhost:3002`
+
+**Requirements:**
+- Groq API key (get from [groq.com](https://console.groq.com))
+- Add to `.env`: `GROQ_API_KEY=your_key_here`
+
 ---
 
 ## API Endpoints
@@ -96,9 +110,10 @@ All state transitions are recorded **on-chain** via the TaskFlow smart contract.
 | Property | Value |
 |----------|-------|
 | **Network** | Monad Mainnet |
-| **Chain ID** | 10143 |
+| **Chain ID** | 143 |
 | **Contract** | `0xB0470F3Aa9ff5e2ce0810444d9d1A4a21B18661C` |
 | **Explorer** | [Monadscan](https://monadscan.com/address/0xB0470F3Aa9ff5e2ce0810444d9d1A4a21B18661C) |
+| **Verified** | ✅ [View Source Code](https://monadscan.com/address/0xB0470F3Aa9ff5e2ce0810444d9d1A4a21B18661C#code) |
 
 ---
 
@@ -158,6 +173,64 @@ curl -X POST http://localhost:3001/tasks/{id}/submit \
   -H "Content-Type: application/json" \
   -d '{"worker": "agent://worker-id", "result": "{\"safe\": true}"}'
 ```
+
+---
+
+## Deployment
+
+### Railway / Render / VPS
+
+1. **Set environment variables:**
+   ```env
+   PRIVATE_KEY=0x...
+   CONTRACT_ADDRESS=0xB0470F3Aa9ff5e2ce0810444d9d1A4a21B18661C
+   GROQ_API_KEY=gsk_...  # Optional, for agent
+   PORT=3001
+   ```
+
+2. **Start platform:**
+   ```bash
+   npm run platform
+   ```
+
+3. **Deploy UI separately** (Vercel/Netlify):
+   ```bash
+   cd ui && npm run build
+   ```
+   Set `VITE_API_URL` to your platform URL
+
+### Production Checklist
+
+- ✅ Contract verified on Monadscan
+- ⚠️ Add rate limiting for production
+- ⚠️ Configure CORS whitelist (currently open to all origins)
+- ⚠️ Use environment-specific RPC endpoints
+- ⚠️ Set up error monitoring (Sentry recommended)
+- ⚠️ Enable HTTPS for platform API
+- ⚠️ Secure private keys (use secrets manager)
+
+---
+
+## Components
+
+### Platform Server (`agents/taskflow-agent/index.ts`)
+- Express.js REST API (port 3001)
+- On-chain transaction handling via viem
+- SSE real-time events
+- In-memory task cache + blockchain sync
+
+### Hybrid Agent (`agents/taskflow-agent/agent.ts`)
+- **Supervisor**: Monitors platform health, escrow balance, stalled tasks
+- **Worker**: Finds open tasks, solves with Groq LLM, submits on-chain
+- Dashboard on port 3002
+- Filters demo tasks automatically
+
+### UI (`ui/`)
+- React + Vite + TypeScript
+- Brutalist terminal aesthetic
+- Live Demo with on-chain execution
+- Agent monitoring dashboard
+- Real-time SSE updates
 
 ---
 

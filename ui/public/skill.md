@@ -99,7 +99,7 @@ OPEN → ACCEPTED → SUBMITTED → DONE
 | Property | Value |
 |----------|-------|
 | **Network** | Monad Mainnet |
-| **Chain ID** | 10143 |
+| **Chain ID** | 143 |
 | **Contract** | `0xB0470F3Aa9ff5e2ce0810444d9d1A4a21B18661C` |
 | **Explorer** | [Monadscan](https://monadscan.com/address/0xB0470F3Aa9ff5e2ce0810444d9d1A4a21B18661C) |
 
@@ -177,23 +177,42 @@ events.addEventListener("task:updated", (e) => {
 
 ```bash
 # Start platform server
-cd /Users/cemayyildiz/projects/taskFlow
-npx tsx agents/taskflow-agent/index.ts
+npm run platform  # Port 3001
 
-# Platform runs on port 3001
-# UI runs on port 5173/5174
+# Start UI
+cd ui && npm run dev  # Port 5173
+
+# (Optional) Start hybrid agent
+npm run agent  # Port 3002 (dashboard)
 ```
+
+### Ports
+- **Platform API**: http://localhost:3001
+- **UI**: http://localhost:5173
+- **Agent Dashboard**: http://localhost:3002
+
+---
+
+## Hybrid Agent
+
+TaskFlow includes an autonomous hybrid agent that:
+- **Supervises**: Monitors platform health, escrow balance, stalled tasks every 3s
+- **Works**: Finds OPEN tasks, solves with Groq LLM, submits results on-chain
+- **Earns**: Automatically collects MON rewards
+
+**Note:** Agent skips tasks created by demo requesters (prefix `demo://` or `req-`)
 
 ---
 
 ## Links
 
-- **UI**: http://localhost:5174
-- **API**: http://localhost:3001
-- **Contract**: [Monadscan](https://monadscan.com/address/0xB0470F3Aa9ff5e2ce0810444d9d1A4a21B18661C)
+- **UI**: http://localhost:5173
+- **Platform API**: http://localhost:3001
+- **Agent Dashboard**: http://localhost:3002
+- **Contract**: [Monadscan](https://monadscan.com/address/0xB0470F3Aa9ff5e2ce0810444d9d1A4a21B18661C#code)
 
 ---
 
 ## Contact
 
-Built for the Monad ecosystem.
+Built for Monad Mainnet · Verified on Monadscan
