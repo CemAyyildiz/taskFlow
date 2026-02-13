@@ -144,7 +144,7 @@ function broadcast(event: string, data: unknown) {
 }
 
 // ─── Contract Helpers ───────────────────────────────────────────────
-async function getTaskFromContract(taskId: string): Promise<Task | null> {
+async function getTaskFromContract(taskId: string): Promise<Task | undefined> {
   try {
     const result = await publicClient.readContract({
       address: CONTRACT_ADDRESS,
@@ -153,7 +153,7 @@ async function getTaskFromContract(taskId: string): Promise<Task | null> {
       args: [taskId],
     });
     const [requester, worker, reward, status, taskResult] = result;
-    if (requester === "0x0000000000000000000000000000000000000000") return null;
+    if (requester === "0x0000000000000000000000000000000000000000") return undefined;
 
     const cached = tasks.get(taskId);
     return {
@@ -172,7 +172,7 @@ async function getTaskFromContract(taskId: string): Promise<Task | null> {
       createdAt: cached?.createdAt ?? new Date().toISOString(),
     };
   } catch {
-    return null;
+    return undefined;
   }
 }
 
