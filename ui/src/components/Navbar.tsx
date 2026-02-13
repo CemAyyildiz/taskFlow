@@ -13,7 +13,7 @@ export function Navbar() {
       <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
         {/* Logo */}
         <div className="flex items-center gap-3">
-          <div className="w-3 h-3 bg-[var(--c-accent)]" />
+          <img src="/TaskFlow.png" alt="TaskFlow" className="w-6 h-6" />
           <span className="font-bold text-sm tracking-wider">TASKFLOW</span>
         </div>
 
