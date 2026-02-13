@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { getHealth, getTasks, createTask, acceptTask, submitTask, connectSSE } from "../api";
 import type { Task } from "../types";
 
-const DEMO_REQUESTER = "agent://req-" + Math.random().toString(36).slice(2, 6);
-const DEMO_WORKER = "agent://worker-" + Math.random().toString(36).slice(2, 6);
+const DEMO_REQUESTER = "demo://req-" + Math.random().toString(36).slice(2, 6);
+const DEMO_WORKER = "demo://worker-" + Math.random().toString(36).slice(2, 6);
 
 const TEMPLATES = [
   { title: "Analyze Smart Contract", reward: "0.005" },
@@ -71,8 +71,23 @@ export function Demo() {
 
       await delay(1500);
       log("Worker accepting task...");
-      const accepted = await acceptTask(task.id, DEMO_WORKER);
-      log(`ACCEPT TX: ${accepted.acceptTx?.slice(0, 24)}...`);
+      let accepted;
+      try {
+        accepted = await acceptTask(task.id, DEMO_WORKER);
+        log(`ACCEPT TX: ${accepted.acceptTx?.slice(0, 24)}...`);
+      } catch (e: any) {
+        log(`WARN: Accept failed (${e.message}), retrying with fresh task...`);
+        const fresh = await createTask({
+          title: tpl.title + " (retry)",
+          description: "Demo task",
+          reward: tpl.reward,
+          requester: DEMO_REQUESTER,
+        });
+        log(`NEW ESCROW TX: ${fresh.escrowTx?.slice(0, 24)}...`);
+        await delay(500);
+        accepted = await acceptTask(fresh.id, DEMO_WORKER);
+        log(`ACCEPT TX: ${accepted.acceptTx?.slice(0, 24)}...`);
+      }
 
       await delay(1500);
       log("Processing...");
@@ -80,7 +95,7 @@ export function Demo() {
 
       log("Submitting result...");
       const submitted = await submitTask(
-        task.id, 
+        accepted.id, 
         DEMO_WORKER, 
         JSON.stringify({ status: "completed", task: tpl.title })
       );
@@ -90,7 +105,7 @@ export function Demo() {
       await delay(3500);
 
       const updated = await getTasks();
-      const final = updated.find((t) => t.id === task.id);
+      const final = updated.find((t) => t.id === accepted.id);
       if (final?.payoutTx) {
         log(`PAYOUT TX: ${final.payoutTx.slice(0, 24)}...`);
         log(`SUCCESS: ${tpl.reward} MON sent to worker`);

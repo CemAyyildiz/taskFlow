@@ -11,4 +11,20 @@ module.exports = {
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },
   },
+  etherscan: {
+    apiKey: "5G98MBTZA4GYHHKR6F3NYEZSR3D8XVRB93",
+    customChains: [
+      {
+        network: "monad",
+        chainId: 143,
+        urls: {
+          apiURL: "https://api.monadscan.com/api",
+          browserURL: "https://monadscan.com",
+        },
+      },
+    ],
+  },
+  sourcify: {
+    enabled: false,
+  },
 };

@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "platform": "tsx agents/taskflow-agent/index.ts",
-    "agent": "tsx agents/taskflow-agent/index.ts",
+    "agent": "tsx agents/taskflow-agent/agent.ts",
+    "agent:dev": "tsx --watch agents/taskflow-agent/agent.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
@@ -20,6 +21,7 @@
     "@types/node": "^25.2.3",
     "cors": "^2.8.6",
     "dotenv": "^17.2.4",
+    "eventsource": "^4.1.0",
     "express": "^5.2.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

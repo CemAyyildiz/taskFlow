@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { getHealth, connectSSE } from "../api";
+import { getHealth, getAgentStatus, getAgentCompleted, connectSSE } from "../api";
+import type { AgentStatus } from "../api";
+import type { Task } from "../types";
 
 interface PlatformHealth {
   status: string;
@@ -16,66 +18,54 @@ interface PlatformHealth {
   };
 }
 
-interface Activity {
-  id: string;
-  type: string;
-  message: string;
-  timestamp: string;
-  txHash?: string;
-}
-
 export function Agent() {
   const [health, setHealth] = useState<PlatformHealth | null>(null);
-  const [activities, setActivities] = useState<Activity[]>([]);
+  const [agent, setAgent] = useState<AgentStatus | null>(null);
+  const [completed, setCompleted] = useState<Task[]>([]);
   const [uptime, setUptime] = useState(0);
   const logRef = useRef<HTMLDivElement>(null);
   const startTime = useRef(Date.now());
 
-  // Scroll log to bottom
+  // Scroll log
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [activities]);
+  }, [agent?.alerts]);
 
-  // Health polling
+  // Platform health polling
   useEffect(() => {
     const check = async () => {
-      try {
-        const h = await getHealth();
-        setHealth(h);
-      } catch {
-        setHealth(null);
-      }
+      try { setHealth(await getHealth()); } catch { setHealth(null); }
     };
     check();
     const iv = setInterval(check, 5_000);
     return () => clearInterval(iv);
   }, []);
 
-  // Uptime counter
+  // Agent status polling
   useEffect(() => {
-    const iv = setInterval(() => {
-      setUptime(Math.floor((Date.now() - startTime.current) / 1000));
-    }, 1000);
+    const check = async () => {
+      try {
+        setAgent(await getAgentStatus());
+        setCompleted(await getAgentCompleted());
+      } catch {
+        setAgent(null);
+      }
+    };
+    check();
+    const iv = setInterval(check, 3_000);
     return () => clearInterval(iv);
   }, []);
 
-  // SSE for real-time activities
+  // Uptime
   useEffect(() => {
-    return connectSSE((event, data) => {
-      const activity: Activity = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        type: event,
-        message: formatEvent(event, data),
-        timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
-        txHash: data?.escrowTx || data?.acceptTx || data?.submitTx || data?.payoutTx,
-      };
-      setActivities((prev) => [...prev.slice(-20), activity]);
-    });
+    const iv = setInterval(() => setUptime(Math.floor((Date.now() - startTime.current) / 1000)), 1000);
+    return () => clearInterval(iv);
   }, []);
 
-  const online = health?.status === "ok";
+  const platformOn = health?.status === "ok";
+  const agentOn = !!agent;
 
-  const formatUptime = (s: number) => {
+  const fmt = (s: number) => {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
     const sec = s % 60;
@@ -85,44 +75,70 @@ export function Agent() {
   return (
     <section id="agent" className="py-20 px-6 border-t-2 border-[var(--c-white)]">
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
-          <h2 className="text-3xl font-bold">PLATFORM</h2>
-          <span className={online ? "status-online" : "status-offline"}>
-            {online ? "ONLINE" : "OFFLINE"}
+
+        {/* ── Header ── */}
+        <div className="flex items-center gap-4 mb-3">
+          <h2 className="text-3xl font-bold">HYBRID AGENT</h2>
+          <span className={agentOn ? "status-online" : "status-offline"}>
+            {agentOn ? "RUNNING" : "OFFLINE"}
           </span>
         </div>
+        <p className="text-dim text-sm mb-8">
+          Autonomous supervisor + worker — monitors the platform, finds open tasks, solves with LLM, submits on-chain
+        </p>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left - Stats */}
+        {/* ── Top Stats Row ── */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+          <HighlightBox
+            label="EARNED"
+            value={agent ? `${parseFloat(agent.stats.earned).toFixed(4)} MON` : "—"}
+            accent
+          />
+          <HighlightBox label="COMPLETED" value={agent?.stats.completed ?? "—"} />
+          <HighlightBox label="ACCEPTED" value={agent?.stats.accepted ?? "—"} />
+          <HighlightBox label="FAILED" value={agent?.stats.failed ?? "—"} />
+          <HighlightBox
+            label="ESCROW"
+            value={health ? `${parseFloat(health.escrowBalance).toFixed(4)} MON` : "—"}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+          {/* ── Left: Agent Identity ── */}
           <div className="brutal-card p-6 space-y-4">
-            <div className="flex items-center justify-between text-xs border-b border-[var(--c-gray-light)] pb-3">
-              <span className="text-dim">STATUS</span>
-              <span className={online ? "text-success" : "text-error"}>
-                {online ? "● CONNECTED" : "○ DISCONNECTED"}
-              </span>
+            <h3 className="text-xs text-dim border-b border-[var(--c-gray-light)] pb-2 mb-1">
+              AGENT CONFIG
+            </h3>
+
+            <StatRow label="ID" value={agent?.agentId ?? "—"} />
+            <StatRow label="STATUS" value={agentOn ? "● ACTIVE" : "○ STOPPED"} accent={agentOn} />
+            <StatRow label="LLM" value="GROQ / LLAMA-3.3-70B" />
+            <StatRow label="UPTIME" value={fmt(uptime)} />
+
+            <div className="border-t border-[var(--c-gray-light)] pt-3">
+              <h3 className="text-xs text-dim mb-2">CURRENT TASK</h3>
+              {agent?.currentTask ? (
+                <p className="text-accent text-sm font-bold">{agent.currentTask}</p>
+              ) : (
+                <p className="text-dim text-xs">idle — waiting for open tasks</p>
+              )}
             </div>
 
-            <StatRow label="UPTIME" value={formatUptime(uptime)} />
-            <StatRow label="CHAIN" value={health?.chain || "—"} />
-            <StatRow 
-              label="ESCROW BALANCE" 
-              value={health ? `${parseFloat(health.escrowBalance).toFixed(4)} MON` : "—"} 
-              accent 
-            />
-            
-            <div className="border-t border-[var(--c-gray-light)] pt-3 mt-3">
-              <p className="text-xs text-dim mb-2">TASK STATS</p>
-              <div className="grid grid-cols-4 gap-2 text-center">
-                <StatBox label="OPEN" value={health?.tasks.open ?? 0} />
-                <StatBox label="ACTIVE" value={health?.tasks.accepted ?? 0} />
-                <StatBox label="PENDING" value={health?.tasks.submitted ?? 0} />
-                <StatBox label="DONE" value={health?.tasks.done ?? 0} />
+            <div className="border-t border-[var(--c-gray-light)] pt-3">
+              <h3 className="text-xs text-dim mb-2">PLATFORM</h3>
+              <StatRow label="STATUS" value={platformOn ? "● CONNECTED" : "○ DOWN"} accent={platformOn} />
+              <StatRow label="CHAIN" value={health?.chain || "—"} />
+              <div className="grid grid-cols-4 gap-2 text-center mt-3">
+                <MiniBox label="OPEN" value={health?.tasks.open ?? 0} />
+                <MiniBox label="ACTIVE" value={health?.tasks.accepted ?? 0} />
+                <MiniBox label="PEND" value={health?.tasks.submitted ?? 0} />
+                <MiniBox label="DONE" value={health?.tasks.done ?? 0} />
               </div>
             </div>
 
             {health && (
-              <div className="border-t border-[var(--c-gray-light)] pt-3 mt-3 text-xs">
+              <div className="border-t border-[var(--c-gray-light)] pt-3 text-xs">
                 <p className="text-dim mb-1">CONTRACT</p>
                 <a
                   href={`https://monadscan.com/address/${health.contract}`}
@@ -136,44 +152,102 @@ export function Agent() {
             )}
           </div>
 
-          {/* Right - Activity Log */}
+          {/* ── Middle: Activity Feed ── */}
           <div className="terminal-box">
             <div className="terminal-header">
               <div className="terminal-dot bg-[var(--c-error)]" />
               <div className="terminal-dot bg-[var(--c-accent)]" />
               <div className="terminal-dot bg-[var(--c-success)]" />
-              <span className="text-xs text-dim ml-2">activity.log</span>
-              <span className="text-xs text-dim ml-auto">{activities.length} events</span>
+              <span className="text-xs text-dim ml-2">agent.log</span>
+              <span className="text-xs text-dim ml-auto">{agent?.alerts.length ?? 0} events</span>
             </div>
 
-            <div ref={logRef} className="h-80 overflow-y-auto p-4 space-y-1 text-xs">
-              {activities.length === 0 ? (
-                <p className="text-dim">$ waiting for events<span className="cursor" /></p>
+            <div ref={logRef} className="h-[420px] overflow-y-auto p-4 space-y-1 text-xs">
+              {!agent || agent.alerts.length === 0 ? (
+                <p className="text-dim">$ agent idle<span className="cursor" /></p>
               ) : (
-                activities.map((a) => (
-                  <div key={a.id} className="flex gap-2">
-                    <span className="text-dim shrink-0">[{a.timestamp}]</span>
-                    <span className={
-                      a.type.includes("created") ? "text-accent" :
-                      a.type.includes("updated") ? "text-success" :
-                      "text-[var(--c-white)]"
-                    }>
-                      {a.message}
-                    </span>
-                    {a.txHash && (
-                      <a
-                        href={`https://monadscan.com/tx/${a.txHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-dim hover:text-accent shrink-0"
-                      >
-                        [TX]
-                      </a>
-                    )}
+                [...agent.alerts].reverse().map((a, i) => (
+                  <p key={i} className={
+                    a.includes("Error") ? "text-error" :
+                    a.includes("Completed") || a.includes("MON") ? "text-success" :
+                    a.includes("Accepted") ? "text-accent" :
+                    a.includes("Stalled") || a.includes("Missing") ? "text-[var(--c-accent)]" :
+                    "text-dim"
+                  }>
+                    {a}
+                  </p>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* ── Right: Completed Tasks ── */}
+          <div className="terminal-box">
+            <div className="terminal-header">
+              <div className="terminal-dot bg-[var(--c-error)]" />
+              <div className="terminal-dot bg-[var(--c-accent)]" />
+              <div className="terminal-dot bg-[var(--c-success)]" />
+              <span className="text-xs text-dim ml-2">completed.db</span>
+              <span className="text-xs text-dim ml-auto">{completed.length} tasks</span>
+            </div>
+
+            <div className="h-[420px] overflow-y-auto divide-y divide-[var(--c-gray-light)]">
+              {completed.length === 0 ? (
+                <div className="p-8 text-center text-dim text-xs">
+                  <p className="mb-2">NO COMPLETED TASKS YET</p>
+                  <p>Agent will automatically pick up</p>
+                  <p>and solve open tasks</p>
+                </div>
+              ) : (
+                [...completed].reverse().map((task) => (
+                  <div key={task.id} className="p-4 hover:bg-[var(--c-gray)] transition-colors">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-bold truncate mr-2">{task.title}</span>
+                      <span className="text-success text-xs font-bold shrink-0">
+                        +{task.reward} MON
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {task.escrowTx && (
+                        <TxLink hash={task.escrowTx} label="ESCROW" />
+                      )}
+                      {task.acceptTx && (
+                        <TxLink hash={task.acceptTx} label="ACCEPT" />
+                      )}
+                      {task.submitTx && (
+                        <TxLink hash={task.submitTx} label="SUBMIT" />
+                      )}
+                      {task.payoutTx && (
+                        <TxLink hash={task.payoutTx} label="PAYOUT" color="text-success" />
+                      )}
+                    </div>
                   </div>
                 ))
               )}
             </div>
+          </div>
+        </div>
+
+        {/* ── Workflow Diagram ── */}
+        <div className="mt-8 terminal-box p-6">
+          <div className="terminal-header mb-4" style={{ margin: "-24px -24px 16px", padding: "8px 12px" }}>
+            <div className="terminal-dot bg-[var(--c-error)]" />
+            <div className="terminal-dot bg-[var(--c-accent)]" />
+            <div className="terminal-dot bg-[var(--c-success)]" />
+            <span className="text-xs text-dim ml-2">agent-workflow.md</span>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 text-xs">
+            <Step icon="🔍" label="POLL TASKS" sub="every 3s" />
+            <Arrow />
+            <Step icon="📋" label="SELECT BEST" sub="highest reward" />
+            <Arrow />
+            <Step icon="✅" label="ACCEPT" sub="on-chain tx" />
+            <Arrow />
+            <Step icon="🧠" label="LLM SOLVE" sub="Groq API" />
+            <Arrow />
+            <Step icon="📤" label="SUBMIT" sub="on-chain tx" />
+            <Arrow />
+            <Step icon="💰" label="PAYOUT" sub="auto release" />
           </div>
         </div>
       </div>
@@ -181,16 +255,27 @@ export function Agent() {
   );
 }
 
-function StatRow({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+/* ── Sub-components ── */
+
+function HighlightBox({ label, value, accent }: { label: string; value: string | number; accent?: boolean }) {
   return (
-    <div className="flex items-center justify-between text-xs">
-      <span className="text-dim">{label}</span>
-      <span className={accent ? "text-accent font-bold" : ""}>{value}</span>
+    <div className="brutal-card p-4 text-center">
+      <p className={`text-xl font-bold ${accent ? "text-accent" : ""}`}>{value}</p>
+      <p className="text-[10px] text-dim mt-1">{label}</p>
     </div>
   );
 }
 
-function StatBox({ label, value }: { label: string; value: number }) {
+function StatRow({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="flex items-center justify-between text-xs py-1">
+      <span className="text-dim">{label}</span>
+      <span className={accent ? "text-success font-bold" : ""}>{value}</span>
+    </div>
+  );
+}
+
+function MiniBox({ label, value }: { label: string; value: number }) {
   return (
     <div className="brutal-card p-2">
       <p className="text-lg font-bold">{value}</p>
@@ -199,12 +284,29 @@ function StatBox({ label, value }: { label: string; value: number }) {
   );
 }
 
-function formatEvent(event: string, data: any): string {
-  if (event === "task:created") {
-    return `NEW: "${data.title}" (${data.reward} MON)`;
-  }
-  if (event === "task:updated") {
-    return `UPDATE: ${data.id} → ${data.status}`;
-  }
-  return `${event}: ${JSON.stringify(data).slice(0, 50)}`;
+function TxLink({ hash, label, color }: { hash: string; label: string; color?: string }) {
+  return (
+    <a
+      href={`https://monadscan.com/tx/${hash}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`${color || "text-dim"} hover:text-accent transition-colors`}
+    >
+      [{label}]
+    </a>
+  );
+}
+
+function Step({ icon, label, sub }: { icon: string; label: string; sub: string }) {
+  return (
+    <div className="text-center">
+      <div className="text-2xl mb-1">{icon}</div>
+      <p className="font-bold text-xs">{label}</p>
+      <p className="text-dim text-[10px]">{sub}</p>
+    </div>
+  );
+}
+
+function Arrow() {
+  return <span className="text-accent text-lg font-bold hidden sm:inline">→</span>;
 }

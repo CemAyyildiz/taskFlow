@@ -20,7 +20,7 @@ export function Navbar() {
         {/* Nav Links */}
         <div className="hidden md:flex items-center gap-8 text-xs">
           <a href="#agent" className="text-dim hover:text-[var(--c-white)] transition-colors">
-            [AGENT]
+            [HYBRID AGENT]
           </a>
           <a href="#demo" className="text-dim hover:text-[var(--c-white)] transition-colors">
             [DEMO]

@@ -1,9 +1,39 @@
 import type { Task } from "./types";
 
 const API = "http://localhost:3001";
+const AGENT_API = "http://localhost:3002";
 
 // Contract address (same as deployed)
 export const CONTRACT_ADDRESS = "0xB0470F3Aa9ff5e2ce0810444d9d1A4a21B18661C";
+
+// ─── Agent Status ───────────────────────────────────────────────────
+export interface AgentStatus {
+  agentId: string;
+  platform: string;
+  platformOk: boolean;
+  currentTask: string | null;
+  stats: {
+    polled: number;
+    accepted: number;
+    completed: number;
+    failed: number;
+    earned: string;
+  };
+  alerts: string[];
+  completedCount: number;
+}
+
+export async function getAgentStatus(): Promise<AgentStatus> {
+  const res = await fetch(`${AGENT_API}/api/status`);
+  if (!res.ok) throw new Error("Agent offline");
+  return res.json();
+}
+
+export async function getAgentCompleted(): Promise<Task[]> {
+  const res = await fetch(`${AGENT_API}/api/completed`);
+  if (!res.ok) throw new Error("Agent offline");
+  return res.json();
+}
 
 // ─── Health ─────────────────────────────────────────────────────────
 export async function getHealth(): Promise<any> {
