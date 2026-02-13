@@ -1,8 +1,10 @@
 import dotenv from "dotenv";
 import { resolve } from "node:path";
 
-// Load .env from project root
-dotenv.config({ path: resolve(import.meta.dirname ?? ".", "../../.env") });
+// Load .env from project root (skip if env vars already set, e.g. Railway)
+if (!process.env.PRIVATE_KEY) {
+  dotenv.config({ path: resolve(import.meta.dirname ?? ".", "../../.env") });
+}
 
 import express from "express";
 import cors from "cors";
