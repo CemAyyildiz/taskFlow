@@ -31,9 +31,22 @@ export async function getAgentStatus(): Promise<AgentStatus> {
 }
 
 export async function getAgentCompleted(): Promise<Task[]> {
-  const res = await fetch(`${AGENT_API}/api/completed`);
-  if (!res.ok) throw new Error("Agent offline");
-  return res.json();
+  try {
+    // Önce agent'ın kendi completed listesini dene
+    const res = await fetch(`${AGENT_API}/api/completed`);
+    if (res.ok) {
+      const agentCompleted = await res.json();
+      if (agentCompleted.length > 0) return agentCompleted;
+    }
+  } catch {}
+  
+  // Agent listesi boşsa platform'daki DONE görevleri getir
+  try {
+    const res = await fetch(`${API}/tasks?status=DONE`);
+    if (res.ok) return res.json();
+  } catch {}
+  
+  return [];
 }
 
 // ─── Health ─────────────────────────────────────────────────────────
