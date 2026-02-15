@@ -88,15 +88,16 @@ export function Agent() {
         </p>
 
         {/* ── Top Stats Row ── */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <HighlightBox
             label="EARNED"
-            value={agent ? `${parseFloat(agent.stats.earned).toFixed(4)} MON` : "—"}
+            value={completed.length > 0
+              ? `${completed.reduce((sum, t) => sum + parseFloat(t.reward || "0"), 0).toFixed(4)} MON`
+              : "0 MON"}
             accent
           />
-          <HighlightBox label="COMPLETED" value={agent?.stats.completed ?? "—"} />
-          <HighlightBox label="ACCEPTED" value={agent?.stats.accepted ?? "—"} />
-          <HighlightBox label="FAILED" value={agent?.stats.failed ?? "—"} />
+          <HighlightBox label="COMPLETED" value={completed.length} />
+          <HighlightBox label="TOTAL TASKS" value={health?.tasks.total ?? "—"} />
           <HighlightBox
             label="ESCROW"
             value={health ? `${parseFloat(health.escrowBalance).toFixed(4)} MON` : "—"}
