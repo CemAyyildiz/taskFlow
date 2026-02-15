@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getHealth, getAgentStatus, getAgentCompleted, connectSSE } from "../api";
+import { getHealth, getAgentStatus, getAgentCompleted } from "../api";
 import type { AgentStatus } from "../api";
 import type { Task } from "../types";
 
