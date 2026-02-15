@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 ecosystem.config.js
+ecosystem.config.cjs
 
 # Build outputs
 *.js
